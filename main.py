@@ -48,7 +48,10 @@ REDDIT_MAP = {
     "luxury": "Luxury",
     "architecture": "ArchitecturePorn",
     "crypto": "CryptoCurrency",
-    "travel": "travel"
+    "travel": "travel",
+    "18plus": "nsfw"
+}
+"
 }
 
 def fetch_reddit_data(categories):
