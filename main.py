@@ -158,7 +158,7 @@ def home():
 
 @app.route("/api/feed", methods=["GET"])
 def get_clean_feed():
-    platforms_param = request.args.get("platforms", "tiktok,reddit,x,linkedin")
+    platforms_param = request.args.get("platforms", "tiktok,instagram,reddit,x,linkedin")
     selected_platforms = [p.strip().lower() for p in platforms_param.split(",") if p.strip()]
 
     categories_param = request.args.get("categories", "tech,gaming,luxury,lifestyle")
@@ -168,40 +168,41 @@ def get_clean_feed():
 
     all_cards = []
 
-    if "reddit" in selected_platforms:
-        reddit_items = fetch_reddit_data(selected_categories)
-        all_cards.extend(reddit_items)
+    # 1. Pokušaj dohvata iz Supabasea
+    if supabase:
+        try:
+            res = supabase.table("signals").select("*").in_("platform", selected_platforms).in_("category", selected_categories).limit(50).execute()
+            if res.data:
+                all_cards.extend(res.data)
+        except Exception as e:
+            print(f"Supabase read error: {e}")
 
-    for platform in selected_platforms:
-        if platform in ["tiktok", "x", "linkedin"]:
-            platform_items = generate_mock_platform_data(platform, selected_categories)
-            all_cards.extend(platform_items)
+    # 2. Live / Mock fallback ako baza nema dovoljno
+    if not all_cards:
+        if "reddit" in selected_platforms:
+            reddit_items = fetch_reddit_data(selected_categories)
+            if reddit_items:
+                all_cards.extend(reddit_items)
 
+        for platform in selected_platforms:
+            if platform in ["tiktok", "instagram", "x", "linkedin"]:
+                all_cards.extend(generate_mock_platform_data(platform, selected_categories))
+
+    # 3. Sigurnosni backup (ako je Reddit zakazao timeoutom, popuni sa X/mockom da feed nikad nije prazan)
+    if not all_cards:
+        for platform in selected_platforms:
+            all_cards.extend(generate_mock_platform_data("x" if platform == "reddit" else platform, selected_categories))
+
+    # Pretraga
     if search_query:
-        filtered_cards = []
-        for card in all_cards:
-            in_title = search_query in card.get("title", "").lower()
-            in_summary = search_query in card.get("summary", "").lower()
-            in_keywords = any(search_query in k.lower() for k in card.get("keywords", []))
-            if in_title or in_summary or in_keywords:
-                filtered_cards.append(card)
-        all_cards = filtered_cards
+        all_cards = [
+            card for card in all_cards 
+            if search_query in card.get("title", "").lower() 
+            or search_query in card.get("summary", "").lower()
+            or any(search_query in str(k).lower() for k in card.get("keywords", []))
+        ]
 
     all_cards.sort(key=lambda x: x.get("score", 0), reverse=True)
-
-    if not all_cards:
-        all_cards.append({
-            "platform": "system",
-            "category": "tech",
-            "source": "Evolysium AI",
-            "title": "No Matching Signals Found",
-            "summary": "Try adjusting your search keywords or choosing additional content categories.",
-            "url": "#",
-            "image": CATEGORY_IMAGES["tech"],
-            "score": 100,
-            "sentiment": "System Info",
-            "keywords": ["system"]
-        })
 
     return jsonify({
         "success": True,
@@ -210,6 +211,7 @@ def get_clean_feed():
         "active_categories": selected_categories,
         "items": all_cards
     })
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
