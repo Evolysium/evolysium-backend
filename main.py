@@ -3,6 +3,7 @@ import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import google.generativeai as genai
+from supabase import create_client, Client
 
 app = Flask(__name__)
 CORS(app)
@@ -12,11 +13,16 @@ api_key = os.environ.get("GEMINI_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 
-# Demo B2B API Ključevi (u produkciji se čuvaju u bazi podataka)
-VALID_B2B_KEYS = {
-    "evo_b2b_demo_123": {"client": "FinTech Analytics Ltd", "plan": "Enterprise"},
-    "evo_b2b_travel_456": {"client": "Global Travel App", "plan": "Pro"}
-}
+# Initialize Supabase Client
+supabase_url = os.environ.get("SUPABASE_URL")
+supabase_key = os.environ.get("SUPABASE_KEY")
+supabase: Client = None
+
+if supabase_url and supabase_key:
+    try:
+        supabase = create_client(supabase_url, supabase_key)
+    except Exception as e:
+        print(f"Failed to initialize Supabase: {e}")
 
 SUBREDDIT_MAP = {
     "crypto": ["CryptoCurrency", "Bitcoin"],
@@ -61,22 +67,31 @@ def fetch_real_reddit_posts(selected_topics):
 def home():
     return jsonify({
         "platform": "Evolysium B2B Platform Engine",
+        "database": "Connected" if supabase else "Disconnected",
         "status": "Online",
-        "version": "0.5-B2B-Ready"
+        "version": "0.6-Database-Integrated"
     })
 
-# B2B Namjenski Endpoint za Vanjske Integracije
+# B2B Endpoint - Provjerava API ključ direktno iz Supabase Baze
 @app.route("/api/v1/b2b/feed", methods=["GET"])
 def get_b2b_feed():
     client_key = request.headers.get("X-API-KEY")
     
-    if not client_key or client_key not in VALID_B2B_KEYS:
-        return jsonify({
-            "error": "Unauthorized",
-            "message": "Invalid or missing X-API-KEY header. Please provide a valid B2B subscription key."
-        }), 401
+    if not client_key:
+        return jsonify({"error": "Unauthorized", "message": "Missing X-API-KEY header."}), 401
 
-    client_info = VALID_B2B_KEYS[client_key]
+    client_info = None
+    if supabase:
+        try:
+            response = supabase.table("b2b_clients").select("*").eq("api_key", client_key).eq("is_active", True).execute()
+            if response.data and len(response.data) > 0:
+                client_info = response.data[0]
+        except Exception as e:
+            print(f"DB Error: {e}")
+
+    if not client_info:
+        return jsonify({"error": "Unauthorized", "message": "Invalid or inactive B2B API key."}), 401
+
     topics_param = request.args.get("topics", "crypto,tech")
     selected_topics = [t.strip().lower() for t in topics_param.split(",")]
 
@@ -84,7 +99,7 @@ def get_b2b_feed():
 
     prompt = f"""
     You are the core AI Engine for **Evolysium B2B API**.
-    Provide a clean, ad-free executive feed in English for enterprise client: {client_info['client']}.
+    Provide a clean, ad-free executive feed in English for enterprise client: {client_info['client_name']}.
     Topics requested: {', '.join(selected_topics).upper()}
     
     Instructions:
@@ -100,7 +115,7 @@ def get_b2b_feed():
         response = model.generate_content(prompt)
         return jsonify({
             "success": True,
-            "b2b_client": client_info["client"],
+            "b2b_client": client_info["client_name"],
             "plan": client_info["plan"],
             "active_topics": selected_topics,
             "clean_feed": response.text
@@ -108,7 +123,7 @@ def get_b2b_feed():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Javni endpoint za tvoj Web Frontend
+# Javni B2C Endpoint za Web Frontend
 @app.route("/api/feed", methods=["GET"])
 def get_clean_feed():
     if not api_key:
@@ -155,4 +170,3 @@ def get_clean_feed():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
