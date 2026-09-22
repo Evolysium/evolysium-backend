@@ -1,8 +1,10 @@
 import os
 from flask import Flask, jsonify
+from flask_cors import CORS
 import google.generativeai as genai
 
 app = Flask(__name__)
+CORS(app)  # Omogućava pozive s frontenda
 
 # Inicijalizacija Gemini AI
 api_key = os.environ.get("GEMINI_API_KEY")
