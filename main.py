@@ -37,8 +37,6 @@ CATEGORY_IMAGES = {
     "18plus": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=600&auto=format&fit=crop"
 }
 
-}
-
 # Subreddit mapiranje za Reddit izvore
 REDDIT_MAP = {
     "tech": "technology",
@@ -50,8 +48,6 @@ REDDIT_MAP = {
     "crypto": "CryptoCurrency",
     "travel": "travel",
     "18plus": "nsfw"
-}
-"
 }
 
 def fetch_reddit_data(categories):
@@ -76,8 +72,8 @@ def fetch_reddit_data(categories):
                             "summary": (pdata.get("selftext") or pdata.get("title"))[:180] + "...",
                             "url": f"https://reddit.com{pdata.get('permalink')}",
                             "image": CATEGORY_IMAGES.get(cat, CATEGORY_IMAGES["tech"]),
-                            "score": 95,
-                            "sentiment": "Community Insight",
+                            "score": 95 if cat != "18plus" else 88,
+                            "sentiment": "Community Insight" if cat != "18plus" else "Mature Signal",
                             "keywords": [cat, "reddit", sub]
                         })
         except Exception as e:
@@ -88,19 +84,20 @@ def fetch_reddit_data(categories):
 def generate_mock_platform_data(platform, categories):
     results = []
     
-    # Različite AI oznake i score po kategorijama
     sentiment_map = {
         "tech": "High Value",
         "gaming": "Trending",
         "crypto": "Market Shift",
-        "lifestyle": "Educational"
+        "lifestyle": "Educational",
+        "18plus": "Restricted 18+"
     }
 
     score_map = {
         "tech": 94,
         "gaming": 88,
         "crypto": 91,
-        "lifestyle": 85
+        "lifestyle": 85,
+        "18plus": 89
     }
 
     for cat in categories:
@@ -155,7 +152,7 @@ def home():
     return jsonify({
         "platform": "Evolysium Multi-Platform AI Engine",
         "status": "Online",
-        "version": "1.1-AI-Scoring-Keywords",
+        "version": "1.2-18plus-Monetization",
         "gemini_active": bool(api_key)
     })
 
@@ -171,18 +168,15 @@ def get_clean_feed():
 
     all_cards = []
 
-    # Dohvati Reddit podatke
     if "reddit" in selected_platforms:
         reddit_items = fetch_reddit_data(selected_categories)
         all_cards.extend(reddit_items)
 
-    # Generiši signal kartice za ostale platforme
     for platform in selected_platforms:
         if platform in ["tiktok", "x", "linkedin"]:
             platform_items = generate_mock_platform_data(platform, selected_categories)
             all_cards.extend(platform_items)
 
-    # Filtriranje po ključnoj reči (search parametru) ako postoji
     if search_query:
         filtered_cards = []
         for card in all_cards:
@@ -193,10 +187,8 @@ def get_clean_feed():
                 filtered_cards.append(card)
         all_cards = filtered_cards
 
-    # Sortiranje svih kartica po AI Quality Score-u (najveći rezultat prvi)
     all_cards.sort(key=lambda x: x.get("score", 0), reverse=True)
 
-    # Rezervne kartice ako nema povratnih podataka
     if not all_cards:
         all_cards.append({
             "platform": "system",
