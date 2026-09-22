@@ -12,7 +12,12 @@ api_key = os.environ.get("GEMINI_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 
-# Mapa podržanih tema i odgovarajućih subreddita
+# Demo B2B API Ključevi (u produkciji se čuvaju u bazi podataka)
+VALID_B2B_KEYS = {
+    "evo_b2b_demo_123": {"client": "FinTech Analytics Ltd", "plan": "Enterprise"},
+    "evo_b2b_travel_456": {"client": "Global Travel App", "plan": "Pro"}
+}
+
 SUBREDDIT_MAP = {
     "crypto": ["CryptoCurrency", "Bitcoin"],
     "travel": ["travel", "solotravel"],
@@ -21,11 +26,9 @@ SUBREDDIT_MAP = {
 }
 
 def fetch_real_reddit_posts(selected_topics):
-    """Povlači prave objave s odabranih subreddita."""
     headers = {"User-Agent": "mozilla/5.0 (windows nt 10.0; win64; x64) applewebkit/537.36 (khtml, like gecko) chrome/120.0.0.0 safari/537.36"}
     extracted_posts = []
 
-    # Odredi koje subreddite povlačimo na temelju korisničkog odabira
     target_subreddits = []
     for topic in selected_topics:
         if topic in SUBREDDIT_MAP:
@@ -56,14 +59,61 @@ def fetch_real_reddit_posts(selected_topics):
 
 @app.route("/")
 def home():
-    return jsonify({"status": "Evolysium AI Backend Online", "version": "0.4-MultiTopic"})
+    return jsonify({
+        "platform": "Evolysium B2B Platform Engine",
+        "status": "Online",
+        "version": "0.5-B2B-Ready"
+    })
 
+# B2B Namjenski Endpoint za Vanjske Integracije
+@app.route("/api/v1/b2b/feed", methods=["GET"])
+def get_b2b_feed():
+    client_key = request.headers.get("X-API-KEY")
+    
+    if not client_key or client_key not in VALID_B2B_KEYS:
+        return jsonify({
+            "error": "Unauthorized",
+            "message": "Invalid or missing X-API-KEY header. Please provide a valid B2B subscription key."
+        }), 401
+
+    client_info = VALID_B2B_KEYS[client_key]
+    topics_param = request.args.get("topics", "crypto,tech")
+    selected_topics = [t.strip().lower() for t in topics_param.split(",")]
+
+    raw_feed = fetch_real_reddit_posts(selected_topics)
+
+    prompt = f"""
+    You are the core AI Engine for **Evolysium B2B API**.
+    Provide a clean, ad-free executive feed in English for enterprise client: {client_info['client']}.
+    Topics requested: {', '.join(selected_topics).upper()}
+    
+    Instructions:
+    1. Eliminate all ads, spam, clickbait, and low-quality posts.
+    2. Format clean Markdown output grouped by topic.
+
+    Live Raw Feed:
+    {raw_feed}
+    """
+
+    try:
+        model = genai.GenerativeModel('gemini-3.6-flash')
+        response = model.generate_content(prompt)
+        return jsonify({
+            "success": True,
+            "b2b_client": client_info["client"],
+            "plan": client_info["plan"],
+            "active_topics": selected_topics,
+            "clean_feed": response.text
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Javni endpoint za tvoj Web Frontend
 @app.route("/api/feed", methods=["GET"])
 def get_clean_feed():
     if not api_key:
         return jsonify({"error": "GEMINI_API_KEY environment variable is not set."}), 500
 
-    # Dohvaćanje odabranih tema iz query parametra (npr. ?topics=crypto,tech)
     topics_param = request.args.get("topics", "crypto,travel")
     selected_topics = [t.strip().lower() for t in topics_param.split(",")]
 
@@ -105,3 +155,4 @@ def get_clean_feed():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
