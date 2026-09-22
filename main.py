@@ -1,15 +1,15 @@
 import os
-from flask import Flask, jsonify, request
-from google import genai
+from flask import Flask, jsonify
+import google.generativeai as genai
 
 app = Flask(__name__)
 
-# Inicijalizacija Gemini AI klijenta (ključ ćemo postaviti na Renderu)
+# Inicijalizacija Gemini AI
 api_key = os.environ.get("GEMINI_API_KEY")
-client = genai.Client(api_key=api_key) if api_key else None
+if api_key:
+    genai.configure(api_key=api_key)
 
 def simulate_raw_social_feed():
-    """Simulacija neobrađenog feeda s Reddita i X-a s ubačenim oglasima."""
     return [
         {"source": "Reddit (r/CryptoCurrency)", "type": "post", "content": "Bitcoin ponovno probija ključne razine otpora. Analitičari raspravljaju o utjecaju novih makroekonomskih pokazatelja."},
         {"source": "X (Twitter)", "type": "ad", "content": "SPONSORED: Kupi 100x MEME COIN odmah i postani milijunaš za 24h! Ne propusti priliku!"},
@@ -24,12 +24,11 @@ def home():
 
 @app.route("/api/feed", methods=["GET"])
 def get_clean_feed():
-    if not client:
+    if not api_key:
         return jsonify({"error": "GEMINI_API_KEY nije postavljen na Renderu."}), 500
 
     raw_feed = simulate_raw_social_feed()
     
-    # Prompt za AI gatekeepera
     prompt = f"""
     Djeluješ kao osobni AI gatekeeper za aplikaciju Evolysium.
     Korisnik želi vidjeti Isključivo korisne informacije vezane uz teme: KRIPTOVALUTE i PUTOVANJA.
@@ -44,10 +43,8 @@ def get_clean_feed():
     """
 
     try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt
-        )
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
         return jsonify({
             "success": True,
             "topics": ["Kriptovalute", "Putovanja"],
