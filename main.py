@@ -24,168 +24,151 @@ if supabase_url and supabase_key:
     except Exception as e:
         print(f"Failed to initialize Supabase: {e}")
 
-SUBREDDIT_MAP = {
-    "crypto": ["CryptoCurrency", "Bitcoin"],
-    "travel": ["travel", "solotravel"],
-    "tech": ["technology", "artificial"],
-    "gaming": ["gaming", "pcgaming"]
+# Mapiranje slika po novim kategorijama sadržaja
+CATEGORY_IMAGES = {
+    "tech": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&auto=format&fit=crop",
+    "gaming": "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?w=600&auto=format&fit=crop",
+    "lifestyle": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&auto=format&fit=crop",
+    "funny": "https://images.unsplash.com/photo-1513360371669-4adf3dd7dff8?w=600&auto=format&fit=crop",
+    "luxury": "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=600&auto=format&fit=crop",
+    "architecture": "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=600&auto=format&fit=crop",
+    "18plus": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=600&auto=format&fit=crop",
+    "crypto": "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w=600&auto=format&fit=crop",
+    "travel": "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=600&auto=format&fit=crop"
 }
 
-def fetch_real_reddit_posts(selected_topics):
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-    extracted_posts = []
+# Subreddit mapiranje za Reddit izvore
+REDDIT_MAP = {
+    "tech": "technology",
+    "gaming": "gaming",
+    "lifestyle": "lifestyle",
+    "funny": "funny",
+    "luxury": "Luxury",
+    "architecture": "ArchitecturePorn",
+    "crypto": "CryptoCurrency",
+    "travel": "travel"
+}
 
-    target_subreddits = []
-    for topic in selected_topics:
-        if topic in SUBREDDIT_MAP:
-            target_subreddits.extend(SUBREDDIT_MAP[topic])
-
-    if not target_subreddits:
-        target_subreddits = ["CryptoCurrency", "travel"]
-
-    for sub in target_subreddits:
+def fetch_reddit_data(categories):
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    posts = []
+    
+    for cat in categories:
+        sub = REDDIT_MAP.get(cat, "all")
         try:
             url = f"https://www.reddit.com/r/{sub}/hot.json?limit=2"
-            response = requests.get(url, headers=headers, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                for post in data.get("data", {}).get("children", []):
-                    pdata = post.get("data", {})
+            res = requests.get(url, headers=headers, timeout=4)
+            if res.status_code == 200:
+                data = res.json()
+                for p in data.get("data", {}).get("children", []):
+                    pdata = p.get("data", {})
                     if not pdata.get("stickied"):
-                        extracted_posts.append({
-                            "type": "reddit",
+                        posts.append({
+                            "platform": "reddit",
+                            "category": cat,
                             "source": f"Reddit (r/{sub})",
                             "title": pdata.get("title"),
-                            "text": pdata.get("selftext", "")[:180] + "...",
-                            "url": f"https://reddit.com{pdata.get('permalink')}"
+                            "summary": (pdata.get("selftext") or pdata.get("title"))[:180] + "...",
+                            "url": f"https://reddit.com{pdata.get('permalink')}",
+                            "image": CATEGORY_IMAGES.get(cat, CATEGORY_IMAGES["tech"])
                         })
         except Exception as e:
-            print(f"Error fetching r/{sub}: {e}")
+            print(f"Reddit error on {cat}: {e}")
+            
+    return posts
 
-    return extracted_posts
-
-def fetch_tiktok_content(selected_topics):
-    """
-    Generates structured, clean TikTok trending signals for selected topics.
-    In production, this plugs into a TikTok RapidAPI/RSS scraper bridge.
-    """
-    tiktok_database = {
-        "crypto": [
-            {
-                "type": "tiktok",
-                "source": "TikTok (@cryptobrief)",
-                "author": "@cryptobrief",
-                "title": "Top 3 Crypto Signals Watchlist for 2026 📈",
-                "summary": "Breakdown of liquidity movement and top performing layer-2 tokens this week. Clean actionable insight without the noise.",
-                "url": "https://www.tiktok.com",
-                "image": "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w=600&auto=format&fit=crop"
-            }
-        ],
-        "travel": [
-            {
-                "type": "tiktok",
-                "source": "TikTok (@nomad_guides)",
-                "author": "@nomad_guides",
-                "title": "Hidden Travel Gems in South East Asia ✈️",
-                "summary": "Affordable solo-travel destinations with high-speed internet and great infrastructure for digital nomads.",
-                "url": "https://www.tiktok.com",
-                "image": "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=600&auto=format&fit=crop"
-            }
-        ],
-        "tech": [
-            {
-                "type": "tiktok",
-                "source": "TikTok (@future_tech_ai)",
-                "author": "@future_tech_ai",
-                "title": "New On-Device AI Benchmarks Explained 🤖",
-                "summary": "How localized neural networks are processing complex queries directly on mobile hardware in under 10ms.",
-                "url": "https://www.tiktok.com",
-                "image": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&auto=format&fit=crop"
-            }
-        ],
-        "gaming": [
-            {
-                "type": "tiktok",
-                "source": "TikTok (@gamer_vault)",
-                "author": "@gamer_vault",
-                "title": "Unreal Engine 5.5 Next-Gen Graphics Test 🎮",
-                "summary": "Real-time ray tracing acceleration on modern mobile GPUs evaluated side-by-side.",
-                "url": "https://www.tiktok.com",
-                "image": "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?w=600&auto=format&fit=crop"
-            }
-        ]
+def generate_mock_platform_data(platform, categories):
+    results = []
+    platform_names = {
+        "tiktok": "TikTok Trending",
+        "x": "X (Twitter) Feed",
+        "linkedin": "LinkedIn Professional"
     }
-
-    tiktok_cards = []
-    for topic in selected_topics:
-        if topic in tiktok_database:
-            tiktok_cards.extend(tiktok_database[topic])
-
-    return tiktok_cards
+    
+    for cat in categories:
+        img_url = CATEGORY_IMAGES.get(cat, CATEGORY_IMAGES["tech"])
+        
+        if platform == "tiktok":
+            results.append({
+                "platform": "tiktok",
+                "category": cat,
+                "source": "TikTok (@creator_signal)",
+                "title": f"Top Trending {cat.capitalize()} Video Signal",
+                "summary": f"Viral short-form breakdown covering key updates and unfiltered insights in {cat}.",
+                "url": "https://www.tiktok.com",
+                "image": img_url
+            })
+        elif platform == "x":
+            results.append({
+                "platform": "x",
+                "category": cat,
+                "source": "X / Twitter",
+                "title": f"Verified Stream: {cat.capitalize()} Insights",
+                "summary": f"Ad-free summary of high-engagement discussions and updates from top voices in {cat}.",
+                "url": "https://x.com",
+                "image": img_url
+            })
+        elif platform == "linkedin":
+            results.append({
+                "platform": "linkedin",
+                "category": cat,
+                "source": "LinkedIn Industry",
+                "title": f"Executive Overview: {cat.capitalize()} Industry Trends",
+                "summary": f"Professional analysis and market breakdown focused on modern developments in {cat}.",
+                "url": "https://www.linkedin.com",
+                "image": img_url
+            })
+            
+    return results
 
 @app.route("/")
 def home():
     return jsonify({
-        "platform": "Evolysium B2B & B2C Engine",
-        "database": "Connected" if supabase else "Disconnected",
-        "tiktok_engine": "Active",
+        "platform": "Evolysium Multi-Platform AI Engine",
         "status": "Online",
-        "version": "0.9-TikTok-Integrated"
+        "version": "1.0-Multi-Source-Categories"
     })
 
 @app.route("/api/feed", methods=["GET"])
 def get_clean_feed():
-    topics_param = request.args.get("topics", "crypto,travel")
-    selected_topics = [t.strip().lower() for t in topics_param.split(",")]
+    # Parsovanje izabranih platformi (npr. tiktok,x,reddit,linkedin)
+    platforms_param = request.args.get("platforms", "tiktok,reddit,x,linkedin")
+    selected_platforms = [p.strip().lower() for p in platforms_param.split(",")]
 
-    # Fetch both Reddit posts and TikTok trending content
-    reddit_posts = fetch_real_reddit_posts(selected_topics)
-    tiktok_posts = fetch_tiktok_content(selected_topics)
+    # Parsovanje izabranih kategorija (npr. tech,gaming,luxury)
+    categories_param = request.args.get("categories", "tech,gaming,luxury,lifestyle")
+    selected_categories = [c.strip().lower() for c in categories_param.split(",")]
 
-    cards = []
+    all_cards = []
 
-    # Format TikTok content
-    for item in tiktok_posts:
-        cards.append({
-            "type": "tiktok",
-            "title": item["title"],
-            "summary": item["summary"],
-            "source": item["source"],
-            "author": item.get("author", "@tiktok"),
-            "url": item["url"],
-            "image": item["image"]
-        })
+    # Dohvati Reddit podatke ako je Reddit odabran
+    if "reddit" in selected_platforms:
+        reddit_items = fetch_reddit_data(selected_categories)
+        all_cards.extend(reddit_items)
 
-    # Format Reddit content
-    topic_images = {
-        "crypto": "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w=600&auto=format&fit=crop",
-        "travel": "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=600&auto=format&fit=crop",
-        "tech": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&auto=format&fit=crop",
-        "gaming": "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?w=600&auto=format&fit=crop"
-    }
+    # Generiši prilagođene signal kartice za ostale odabrane platforme
+    for platform in selected_platforms:
+        if platform in ["tiktok", "x", "linkedin"]:
+            platform_items = generate_mock_platform_data(platform, selected_categories)
+            all_cards.extend(platform_items)
 
-    for item in reddit_posts:
-        img_url = topic_images.get("tech")
-        for t in selected_topics:
-            if t in topic_images:
-                img_url = topic_images[t]
-                break
-
-        cards.append({
-            "type": "reddit",
-            "title": item.get("title"),
-            "summary": item.get("text", "")[:180] + "...",
-            "source": item.get("source", "Reddit Stream"),
-            "author": "Reddit Feed",
-            "url": item.get("url", "#"),
-            "image": img_url
+    # Rezervne kartice ako nema povratnih podataka
+    if not all_cards:
+        all_cards.append({
+            "platform": "system",
+            "category": "tech",
+            "source": "Evolysium AI",
+            "title": "Welcome to Evolysium AI Gatekeeper",
+            "summary": "Select your favorite platforms and content categories above to start streaming filtered signals.",
+            "url": "#",
+            "image": CATEGORY_IMAGES["tech"]
         })
 
     return jsonify({
         "success": True,
-        "language": "en",
-        "active_topics": selected_topics,
-        "items": cards
+        "active_platforms": selected_platforms,
+        "active_categories": selected_categories,
+        "items": all_cards
     })
 
 if __name__ == "__main__":
