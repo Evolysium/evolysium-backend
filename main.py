@@ -111,7 +111,7 @@ def get_b2b_feed():
     """
 
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         return jsonify({
             "success": True,
@@ -157,7 +157,7 @@ def get_clean_feed():
     """
 
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         return jsonify({
             "success": True,
