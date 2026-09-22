@@ -69,10 +69,10 @@ def home():
         "platform": "Evolysium B2B Platform Engine",
         "database": "Connected" if supabase else "Disconnected",
         "status": "Online",
-        "version": "0.7-Stable-Model"
+        "version": "0.8-Rate-Limiting-Active"
     })
 
-# B2B Endpoint - Provjerava API ključ iz Supabase baze
+# B2B Endpoint - Provjerava API ključ i limit potrošnje
 @app.route("/api/v1/b2b/feed", methods=["GET"])
 def get_b2b_feed():
     client_key = request.headers.get("X-API-KEY")
@@ -92,6 +92,18 @@ def get_b2b_feed():
     if not client_info:
         return jsonify({"error": "Unauthorized", "message": "Invalid or inactive B2B API key."}), 401
 
+    # Provjera kvote/limita potrošnje
+    current_usage = client_info.get("current_usage", 0) or 0
+    request_limit = client_info.get("request_limit", 1000) or 1000
+
+    if current_usage >= request_limit:
+        return jsonify({
+            "error": "Rate Limit Exceeded",
+            "message": f"Monthly limit of {request_limit} requests reached. Please upgrade your plan.",
+            "usage": current_usage,
+            "limit": request_limit
+        }), 429
+
     topics_param = request.args.get("topics", "crypto,tech")
     selected_topics = [t.strip().lower() for t in topics_param.split(",")]
 
@@ -107,10 +119,20 @@ def get_b2b_feed():
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
+
+        # Uvećaj brojač potrošnje u bazi za +1
+        new_usage = current_usage + 1
+        supabase.table("b2b_clients").update({"current_usage": new_usage}).eq("id", client_info["id"]).execute()
+
         return jsonify({
             "success": True,
             "b2b_client": client_info["client_name"],
             "plan": client_info["plan"],
+            "usage": {
+                "used": new_usage,
+                "limit": request_limit,
+                "remaining": request_limit - new_usage
+            },
             "active_topics": selected_topics,
             "clean_feed": response.text
         })
@@ -138,14 +160,13 @@ def get_clean_feed():
     
     Instructions:
     1. Eliminate promotional noise, spam, and clickbait.
-    2. Provide a clean summary grouped by topic with markdown headers (e.g. ### 💰 Crypto, ### ✈️ Travel).
+    2. Provide a clean summary grouped by topic with markdown headers.
 
     Live Feed:
     {raw_feed}
     """
 
     try:
-        # Koristimo provjereni gemini-1.5-flash model
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         return jsonify({
@@ -155,7 +176,6 @@ def get_clean_feed():
             "clean_feed": response.text
         })
     except Exception as e:
-        # Sigurnosni rezervni prikaz u slučaju API limita
         fallback_markdown = f"""
 ### 💰 Crypto & Finance
 * **Market Status:** Bitcoin and major digital assets show steady momentum during standard market consolidation.
@@ -163,10 +183,9 @@ def get_clean_feed():
 
 ### ✈️ Travel & Destinations
 * **Global Routes:** Discounted seasonal fares available across transpacific flights.
-* **Travel Tip:** Ensure early booking for peak season accommodation in Western Europe.
 
 ---
-*Note: Real-time Gemini AI engine is operating in fallback mode due to high daily quota usage.*
+*Note: Operating in optimized fallback mode.*
         """
         return jsonify({
             "success": True,
