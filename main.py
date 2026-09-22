@@ -32,7 +32,7 @@ SUBREDDIT_MAP = {
 }
 
 def fetch_real_reddit_posts(selected_topics):
-    headers = {"User-Agent": "mozilla/5.0 (windows nt 10.0; win64; x64) applewebkit/537.36 (khtml, like gecko) chrome/120.0.0.0 safari/537.36"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     extracted_posts = []
 
     target_subreddits = []
@@ -72,7 +72,7 @@ def home():
         "version": "0.6-Database-Integrated"
     })
 
-# B2B Endpoint - Provjerava API ključ direktno iz Supabase Baze
+# B2B Endpoint - Provjerava API ključ iz Supabase baze
 @app.route("/api/v1/b2b/feed", methods=["GET"])
 def get_b2b_feed():
     client_key = request.headers.get("X-API-KEY")
