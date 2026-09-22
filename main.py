@@ -147,52 +147,37 @@ def get_clean_feed():
 
     raw_feed = fetch_real_reddit_posts(selected_topics)
 
-    if not raw_feed:
-        raw_feed = [
-            {"source": "Reddit (r/CryptoCurrency)", "title": "Market updates & liquidity flows", "text": "Bitcoin holds steady near support levels."},
-            {"source": "Reddit (r/travel)", "title": "Top travel destinations for 2026", "text": "New flight routes opened for South East Asia."}
-        ]
+    # Dinamičke vizualne kartice prilagođene temama
+    topic_images = {
+        "crypto": "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w=600&auto=format&fit=crop",
+        "travel": "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=600&auto=format&fit=crop",
+        "tech": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&auto=format&fit=crop",
+        "gaming": "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?w=600&auto=format&fit=crop"
+    }
 
-    prompt = f"""
-    You are the core AI Engine for **Evolysium** — a personal AI gatekeeper platform.
-    Process incoming social posts and provide a clean, high-value, ad-free feed in ENGLISH.
-    Topics: {', '.join(selected_topics).upper()}
-    
-    Instructions:
-    1. Eliminate promotional noise, spam, and clickbait.
-    2. Provide a clean summary grouped by topic with markdown headers.
+    cards = []
+    for item in raw_feed:
+        # Određivanje primarne teme za sliku
+        img_url = topic_images.get("tech")
+        for t in selected_topics:
+            if t in topic_images:
+                img_url = topic_images[t]
+                break
 
-    Live Feed:
-    {raw_feed}
-    """
-
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        return jsonify({
-            "success": True,
-            "language": "en",
-            "active_topics": selected_topics,
-            "clean_feed": response.text
+        cards.append({
+            "title": item.get("title"),
+            "summary": item.get("text", "")[:180] + "...",
+            "source": item.get("source", "Global Stream"),
+            "url": item.get("url", "#"),
+            "image": img_url
         })
-    except Exception as e:
-        fallback_markdown = f"""
-### 💰 Crypto & Finance
-* **Market Status:** Bitcoin and major digital assets show steady momentum during standard market consolidation.
-* **Volume Analysis:** Institutional inflows remain active across major custodial wallets.
 
-### ✈️ Travel & Destinations
-* **Global Routes:** Discounted seasonal fares available across transpacific flights.
-
----
-*Note: Operating in optimized fallback mode.*
-        """
-        return jsonify({
-            "success": True,
-            "language": "en",
-            "active_topics": selected_topics,
-            "clean_feed": fallback_markdown
-        })
+    return jsonify({
+        "success": True,
+        "language": "en",
+        "active_topics": selected_topics,
+        "items": cards
+    })
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
