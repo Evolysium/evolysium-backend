@@ -1,4 +1,5 @@
 import os
+import random
 import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -24,20 +25,65 @@ if supabase_url and supabase_key:
     except Exception as e:
         print(f"Failed to initialize Supabase: {e}")
 
-# Mapiranje slika po kategorijama
-CATEGORY_IMAGES = {
-    "tech": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&auto=format&fit=crop",
-    "gaming": "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?w=600&auto=format&fit=crop",
-    "lifestyle": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&auto=format&fit=crop",
-    "funny": "https://images.unsplash.com/photo-1513360371669-4adf3dd7dff8?w=600&auto=format&fit=crop",
-    "luxury": "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=600&auto=format&fit=crop",
-    "architecture": "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=600&auto=format&fit=crop",
-    "crypto": "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w=600&auto=format&fit=crop",
-    "travel": "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=600&auto=format&fit=crop",
-    "18plus": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=600&auto=format&fit=crop"
+# Media & Hype pool za raznolike vizuale, videe i oštar copy
+CATEGORY_MEDIA_POOL = {
+    "tech": {
+        "images": [
+            "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop",
+            "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=600&auto=format&fit=crop",
+            "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&auto=format&fit=crop"
+        ],
+        "videos": [
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
+        ]
+    },
+    "gaming": {
+        "images": [
+            "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=600&auto=format&fit=crop",
+            "https://images.unsplash.com/photo-1511512578047-dfb367046420?w=600&auto=format&fit=crop"
+        ],
+        "videos": [
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
+        ]
+    },
+    "crypto": {
+        "images": [
+            "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=600&auto=format&fit=crop",
+            "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w=600&auto=format&fit=crop"
+        ],
+        "videos": [
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoy.mp4"
+        ]
+    },
+    "lifestyle": {
+        "images": [
+            "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600&auto=format&fit=crop",
+            "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop"
+        ],
+        "videos": [
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
+        ]
+    },
+    "luxury": {
+        "images": [
+            "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=600&auto=format&fit=crop",
+            "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=600&auto=format&fit=crop"
+        ],
+        "videos": [
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackSeeTheWorld.mp4"
+        ]
+    },
+    "18plus": {
+        "images": [
+            "https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=600&auto=format&fit=crop"
+        ],
+        "videos": [
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4"
+        ]
+    }
 }
 
-# Subreddit mapiranje za Reddit izvore
 REDDIT_MAP = {
     "tech": "technology",
     "gaming": "gaming",
@@ -53,7 +99,6 @@ REDDIT_MAP = {
 def fetch_reddit_data(categories):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     posts = []
-    
     for cat in categories:
         sub = REDDIT_MAP.get(cat, "all")
         try:
@@ -64,96 +109,87 @@ def fetch_reddit_data(categories):
                 for p in data.get("data", {}).get("children", []):
                     pdata = p.get("data", {})
                     if not pdata.get("stickied"):
+                        pool = CATEGORY_MEDIA_POOL.get(cat, CATEGORY_MEDIA_POOL["tech"])
                         posts.append({
                             "platform": "reddit",
                             "category": cat,
-                            "source": f"Reddit (r/{sub})",
-                            "title": pdata.get("title"),
+                            "source": f"Reddit // r/{sub}",
+                            "title": f"⚡ {pdata.get('title')}",
                             "summary": (pdata.get("selftext") or pdata.get("title"))[:180] + "...",
                             "url": f"https://reddit.com{pdata.get('permalink')}",
-                            "image": CATEGORY_IMAGES.get(cat, CATEGORY_IMAGES["tech"]),
-                            "score": 95 if cat != "18plus" else 88,
-                            "sentiment": "Community Insight" if cat != "18plus" else "Mature Signal",
+                            "image": random.choice(pool["images"]),
+                            "video_url": random.choice(pool["videos"]),
+                            "score": random.randint(92, 99),
+                            "sentiment": "Community Alpha",
                             "keywords": [cat, "reddit", sub]
                         })
         except Exception as e:
             print(f"Reddit error on {cat}: {e}")
-            
     return posts
 
 def generate_mock_platform_data(platform, categories):
     results = []
-    
-    sentiment_map = {
-        "tech": "High Value",
-        "gaming": "Trending",
-        "crypto": "Market Shift",
-        "lifestyle": "Educational",
-        "18plus": "Restricted 18+"
+    hype_titles = {
+        "tech": [
+            "Zero-Day Leak: What Big Tech Isn't Telling You About AI Agents",
+            "The Silent Shift: Open-Source Models Just Crushed Proprietary APIs"
+        ],
+        "gaming": [
+            "Meta Shaking Patch: Top Ranked Build Everyone Is Copying Now",
+            "Unreleased Footage: Inside the Next Unreal Engine 5 Sandbox"
+        ],
+        "crypto": [
+            "Whale Watch: $400M Flowing Into Accumulation Wallets Right Now",
+            "Liquidity Cascade Incoming: Key Technical Level to Watch"
+        ],
+        "lifestyle": [
+            "High-Output Routine: How Founders Hack Deep Work in 4 Hours",
+            "Stealth Wealth Setup: Minimalist Spaces That Scream Authority"
+        ],
+        "luxury": [
+            "Off-Market Architectural Masterpiece Listed in Geneva",
+            "Rare Horology Drop: Why Independent Watchmakers Are Outperforming"
+        ],
+        "18plus": [
+            "Unfiltered Creator Economy: Inside Private Subscription Networks",
+            "High-Retention Niche Breakdown: What Scales Audiences Fast"
+        ]
     }
-
-    score_map = {
-        "tech": 94,
-        "gaming": 88,
-        "crypto": 91,
-        "lifestyle": 85,
-        "18plus": 89
-    }
-
+    hype_summaries = [
+        "No fluff. Raw signal extracted from high-engagement primary sources before mainstream picks it up.",
+        "Direct edge: Pattern recognized across 14,000+ active validator nodes and private feeds."
+    ]
     for cat in categories:
-        img_url = CATEGORY_IMAGES.get(cat, CATEGORY_IMAGES["tech"])
-        score = score_map.get(cat, 82)
-        sentiment = sentiment_map.get(cat, "Trending Signal")
-        
-        if platform == "tiktok":
-            results.append({
-                "platform": "tiktok",
-                "category": cat,
-                "source": "TikTok (@creator_signal)",
-                "title": f"Top Trending {cat.capitalize()} Video Signal",
-                "summary": f"Viral short-form breakdown covering key updates and unfiltered insights in {cat}.",
-                "url": "https://www.tiktok.com",
-                "image": img_url,
-                "score": score,
-                "sentiment": sentiment,
-                "keywords": [cat, "tiktok", "viral", "video"]
-            })
-        elif platform == "x":
-            results.append({
-                "platform": "x",
-                "category": cat,
-                "source": "X / Twitter",
-                "title": f"Verified Stream: {cat.capitalize()} Insights",
-                "summary": f"Ad-free summary of high-engagement discussions and updates from top voices in {cat}.",
-                "url": "https://x.com",
-                "image": img_url,
-                "score": score + 2,
-                "sentiment": sentiment,
-                "keywords": [cat, "x", "twitter", "insights"]
-            })
-        elif platform == "linkedin":
-            results.append({
-                "platform": "linkedin",
-                "category": cat,
-                "source": "LinkedIn Industry",
-                "title": f"Executive Overview: {cat.capitalize()} Industry Trends",
-                "summary": f"Professional analysis and market breakdown focused on modern developments in {cat}.",
-                "url": "https://www.linkedin.com",
-                "image": img_url,
-                "score": score + 4,
-                "sentiment": "High Value",
-                "keywords": [cat, "linkedin", "business", "pro"]
-            })
-            
+        pool = CATEGORY_MEDIA_POOL.get(cat, CATEGORY_MEDIA_POOL["tech"])
+        img_url = random.choice(pool["images"])
+        vid_url = random.choice(pool["videos"])
+        t_list = hype_titles.get(cat, ["High-Impact Signal: Market Movement Detected"])
+        chosen_title = random.choice(t_list)
+        chosen_summary = random.choice(hype_summaries)
+        score_base = random.randint(90, 99)
+        results.append({
+            "platform": platform,
+            "category": cat,
+            "source": f"{platform.upper()} // Alpha Terminal",
+            "title": f"⚡ {chosen_title}",
+            "summary": chosen_summary,
+            "url": "https://evolysium.github.io/evolysium-frontend/",
+            "image": img_url,
+            "video_url": vid_url,
+            "score": score_base,
+            "sentiment": "High Signal",
+            "keywords": [cat, platform, "alpha"]
+        })
     return results
 
 @app.route("/")
 def home():
     return jsonify({
-        "platform": "Evolysium Multi-Platform AI Engine",
+        "platform": "Evolysium High-Signal Terminal",
         "status": "Online",
-        "version": "1.2-18plus-Monetization",
-        "gemini_active": bool(api_key)
+        "version": "2.0-alpha",
+        "gemini_active": bool(api_key),
+        "supabase_active": bool(supabase)
     })
 
 @app.route("/api/feed", methods=["GET"])
@@ -177,7 +213,7 @@ def get_clean_feed():
         except Exception as e:
             print(f"Supabase read error: {e}")
 
-    # 2. Live / Mock fallback ako baza nema dovoljno
+    # 2. Live/Mock fallback ako baza nema dovoljno
     if not all_cards:
         if "reddit" in selected_platforms:
             reddit_items = fetch_reddit_data(selected_categories)
@@ -187,11 +223,6 @@ def get_clean_feed():
         for platform in selected_platforms:
             if platform in ["tiktok", "instagram", "x", "linkedin"]:
                 all_cards.extend(generate_mock_platform_data(platform, selected_categories))
-
-    # 3. Sigurnosni backup (ako je Reddit zakazao timeoutom, popuni sa X/mockom da feed nikad nije prazan)
-    if not all_cards:
-        for platform in selected_platforms:
-            all_cards.extend(generate_mock_platform_data("x" if platform == "reddit" else platform, selected_categories))
 
     # Pretraga
     if search_query:
@@ -204,6 +235,21 @@ def get_clean_feed():
 
     all_cards.sort(key=lambda x: x.get("score", 0), reverse=True)
 
+    if not all_cards:
+        all_cards.append({
+            "platform": "system",
+            "category": "tech",
+            "source": "Evolysium Core",
+            "title": "⚡ Signal Stream Clean",
+            "summary": "No matching active cluster. Rotate filter parameters for asymmetric feed.",
+            "url": "#",
+            "image": CATEGORY_MEDIA_POOL["tech"]["images"][0],
+            "video_url": CATEGORY_MEDIA_POOL["tech"]["videos"][0],
+            "score": 100,
+            "sentiment": "System Edge",
+            "keywords": ["system"]
+        })
+
     return jsonify({
         "success": True,
         "count": len(all_cards),
@@ -211,7 +257,6 @@ def get_clean_feed():
         "active_categories": selected_categories,
         "items": all_cards
     })
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
