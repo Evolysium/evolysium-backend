@@ -1,7 +1,7 @@
 import os
 import random
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 import google.generativeai as genai
 from supabase import create_client, Client
@@ -188,13 +188,7 @@ def generate_mock_platform_data(platform, categories):
 
 @app.route("/")
 def home():
-    return jsonify({
-        "platform": "Evolysium High-Signal Terminal",
-        "status": "Online",
-        "version": "2.0-alpha",
-        "gemini_active": bool(api_key),
-        "supabase_active": bool(supabase)
-    })
+    return render_template("index.html")
 
 @app.route("/api/feed", methods=["GET"])
 def get_clean_feed():
@@ -306,7 +300,6 @@ def create_checkout_session():
     tier = data.get("tier", "creator")
     email = data.get("email")
 
-    # Usklađeni paketi i cijene u centima (explorer je besplatan, ostali pretplate)
     prices = {
         "explorer": 0,
         "creator": 999,   # 9.99 €
@@ -316,7 +309,6 @@ def create_checkout_session():
 
     amount = prices.get(tier, 999)
     
-    # Zaštita od naplate besplatnog paketa
     if amount == 0:
         return jsonify({"success": False, "error": "Selected tier is free and cannot be checked out."}), 400
 
