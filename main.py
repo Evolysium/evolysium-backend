@@ -188,11 +188,7 @@ def generate_mock_platform_data(platform, categories):
 
 @app.route("/")
 def home():
-    try:
-        return render_template("index.html")
-    except Exception as e:
-        return f"Greska kod renderiranja templatea: {str(e)}", 500
-
+    return render_template("index.html")
 
 @app.route("/api/feed", methods=["GET"])
 def get_clean_feed():
@@ -334,7 +330,7 @@ def create_checkout_session():
             }],
             'mode': 'subscription',
             'success_url': f"{frontend_url}?success=true",
-            'cancel_url": f"{frontend_url}?canceled=true",
+            'cancel_url': f"{frontend_url}?canceled=true",
         }
         
         if email:
