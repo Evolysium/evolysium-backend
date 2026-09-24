@@ -297,10 +297,12 @@ def create_checkout_session():
     tier = data.get("tier", "creator")
     email = data.get("email")
 
-    # Sigurno dohvaćanje i postavljanje Stripe ključa unutar same rute
+    # Dohvat ključa i provjera duljine za debugiranje
     stripe_key = os.environ.get("STRIPE_SECRET_KEY", "").strip()
-    if not stripe_key:
-        return jsonify({"success": False, "error": "STRIPE_SECRET_KEY nije pronađen u environment varijablama."}), 500
+    print(f"DEBUG - Stripe key length: {len(stripe_key)}")
+
+    if not stripe_key or len(stripe_key) < 10:
+        return jsonify({"success": False, "error": "STRIPE_SECRET_KEY nedostaje ili je nevažeći na Renderu."}), 500
 
     stripe.api_key = stripe_key
 
