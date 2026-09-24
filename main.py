@@ -188,7 +188,11 @@ def generate_mock_platform_data(platform, categories):
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+    try:
+        return render_template("index.html")
+    except Exception as e:
+        return f"Greska kod renderiranja templatea: {str(e)}", 500
+
 
 @app.route("/api/feed", methods=["GET"])
 def get_clean_feed():
