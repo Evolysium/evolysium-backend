@@ -303,22 +303,29 @@ def newsletter_subscribe():
 @app.route("/api/payment/create-checkout-session", methods=["POST"])
 def create_checkout_session():
     data = request.json or {}
-    tier = data.get("tier", "explorer")
+    tier = data.get("tier", "creator")
     email = data.get("email")
 
+    # Usklađeni paketi i cijene u centima (explorer je besplatan, ostali pretplate)
     prices = {
-        "explorer": 999,   # 9.99 €
-        "creator": 1199,   # 11.99 €
-        "elite": 2499      # 24.99 €
+        "explorer": 0,
+        "creator": 999,   # 9.99 €
+        "business": 1199, # 11.99 €
+        "elite": 2499     # 24.99 €
     }
 
     amount = prices.get(tier, 999)
+    
+    # Zaštita od naplate besplatnog paketa
+    if amount == 0:
+        return jsonify({"success": False, "error": "Selected tier is free and cannot be checked out."}), 400
+
     frontend_url = os.environ.get("FRONTEND_URL", "https://evolysium.github.io/evolysium-frontend/")
 
     try:
-        checkout_session = stripe.checkout.sessions.create(
-            payment_method_types=['card'],
-            line_items=[{
+        session_data = {
+            'payment_method_types': ['card'],
+            'line_items': [{
                 'price_data': {
                     'currency': 'eur',
                     'product_data': {
@@ -329,14 +336,19 @@ def create_checkout_session():
                 },
                 'quantity': 1,
             }],
-            mode='subscription',
-            customer_email=email,
-            success_url=f"{frontend_url}?success=true",
-            cancel_url=f"{frontend_url}?canceled=true",
-        )
+            'mode': 'subscription',
+            'success_url': f"{frontend_url}?success=true",
+            'cancel_url": f"{frontend_url}?canceled=true",
+        }
+        
+        if email:
+            session_data['customer_email'] = email
+
+        checkout_session = stripe.checkout.sessions.create(**session_data)
         return jsonify({"success": True, "url": checkout_session.url})
+        
     except Exception as e:
-        print(f"STRIPE GREŠKA: {str(e)}")  # Ispisuje točnu grešku u Render logove
+        print(f"STRIPE GREŠKA: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
