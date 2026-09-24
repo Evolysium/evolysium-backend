@@ -26,9 +26,6 @@ if supabase_url and supabase_key:
     except Exception as e:
         print(f"Failed to initialize Supabase: {e}")
 
-# Initialize Stripe
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
-
 # Media & Hype pool za raznolike vizuale, videe i oštar copy
 CATEGORY_MEDIA_POOL = {
     "tech": {
@@ -300,6 +297,13 @@ def create_checkout_session():
     tier = data.get("tier", "creator")
     email = data.get("email")
 
+    # Sigurno dohvaćanje i postavljanje Stripe ključa unutar same rute
+    stripe_key = os.environ.get("STRIPE_SECRET_KEY", "").strip()
+    if not stripe_key:
+        return jsonify({"success": False, "error": "STRIPE_SECRET_KEY nije pronađen u environment varijablama."}), 500
+
+    stripe.api_key = stripe_key
+
     prices = {
         "explorer": 0,
         "creator": 999,   # 9.99 €
@@ -340,8 +344,9 @@ def create_checkout_session():
         return jsonify({"success": True, "url": checkout_session.url})
         
     except Exception as e:
-        print(f"STRIPE GREŠKA: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        err_msg = str(e)
+        print(f"STRIPE DETALJNA GREŠKA: {err_msg}")
+        return jsonify({"success": False, "error": err_msg}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
