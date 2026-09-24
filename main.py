@@ -259,7 +259,7 @@ def get_clean_feed():
         "items": all_cards
     })
 
-# --- NOVE RUTE: AUTENTIFIKACIJA, NEWSLETTER I STRIPE ---
+# --- RUTE: AUTENTIFIKACIJA, NEWSLETTER I STRIPE ---
 
 @app.route("/api/auth/register", methods=["POST"])
 def register_user():
@@ -302,7 +302,7 @@ def newsletter_subscribe():
 
 @app.route("/api/payment/create-checkout-session", methods=["POST"])
 def create_checkout_session():
-    data = request.json
+    data = request.json or {}
     tier = data.get("tier", "explorer")
     email = data.get("email")
 
@@ -336,6 +336,7 @@ def create_checkout_session():
         )
         return jsonify({"success": True, "url": checkout_session.url})
     except Exception as e:
+        print(f"STRIPE GREŠKA: {str(e)}")  # Ispisuje točnu grešku u Render logove
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
