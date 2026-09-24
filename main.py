@@ -5,6 +5,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import google.generativeai as genai
 from supabase import create_client, Client
+import stripe
 
 app = Flask(__name__)
 CORS(app)
@@ -24,6 +25,9 @@ if supabase_url and supabase_key:
         supabase = create_client(supabase_url, supabase_key)
     except Exception as e:
         print(f"Failed to initialize Supabase: {e}")
+
+# Initialize Stripe
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
 
 # Media & Hype pool za raznolike vizuale, videe i oštar copy
 CATEGORY_MEDIA_POOL = {
@@ -204,7 +208,6 @@ def get_clean_feed():
 
     all_cards = []
 
-    # 1. Pokušaj dohvata iz Supabasea
     if supabase:
         try:
             res = supabase.table("signals").select("*").in_("platform", selected_platforms).in_("category", selected_categories).limit(50).execute()
@@ -213,7 +216,6 @@ def get_clean_feed():
         except Exception as e:
             print(f"Supabase read error: {e}")
 
-    # 2. Live/Mock fallback ako baza nema dovoljno
     if not all_cards:
         if "reddit" in selected_platforms:
             reddit_items = fetch_reddit_data(selected_categories)
@@ -224,7 +226,6 @@ def get_clean_feed():
             if platform in ["tiktok", "instagram", "x", "linkedin"]:
                 all_cards.extend(generate_mock_platform_data(platform, selected_categories))
 
-    # Pretraga
     if search_query:
         all_cards = [
             card for card in all_cards 
@@ -257,6 +258,85 @@ def get_clean_feed():
         "active_categories": selected_categories,
         "items": all_cards
     })
+
+# --- NOVE RUTE: AUTENTIFIKACIJA, NEWSLETTER I STRIPE ---
+
+@app.route("/api/auth/register", methods=["POST"])
+def register_user():
+    data = request.json
+    email = data.get("email")
+    password = data.get("password")
+
+    if not email or not password:
+        return jsonify({"success": False, "error": "Email i lozinka su obavezni."}), 400
+
+    if not supabase:
+        return jsonify({"success": False, "error": "Supabase nije konfiguriran."}), 500
+
+    try:
+        res = supabase.auth.sign_up({"email": email, "password": password})
+        return jsonify({
+            "success": True, 
+            "message": "Registracija uspješna! Provjerite email radi verifikacije.",
+            "data": res.user
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+@app.route("/api/newsletter/subscribe", methods=["POST"])
+def newsletter_subscribe():
+    data = request.json
+    email = data.get("email")
+
+    if not email:
+        return jsonify({"success": False, "error": "Email je obavezan."}), 400
+
+    if not supabase:
+        return jsonify({"success": False, "error": "Supabase nije aktivan."}), 500
+
+    try:
+        supabase.table("newsletter").insert({"email": email}).execute()
+        return jsonify({"success": True, "message": "Uspješno ste se prijavili na newsletter!"})
+    except Exception as e:
+        return jsonify({"success": False, "error": "Ovaj email je već prijavljen ili je došlo do greške."}), 400
+
+@app.route("/api/payment/create-checkout-session", methods=["POST"])
+def create_checkout_session():
+    data = request.json
+    tier = data.get("tier", "explorer")
+    email = data.get("email")
+
+    prices = {
+        "explorer": 999,   # 9.99 €
+        "creator": 1199,   # 11.99 €
+        "elite": 2499      # 24.99 €
+    }
+
+    amount = prices.get(tier, 999)
+    frontend_url = os.environ.get("FRONTEND_URL", "https://evolysium.github.io/evolysium-frontend/")
+
+    try:
+        checkout_session = stripe.checkout.sessions.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'eur',
+                    'product_data': {
+                        'name': f'Evolysium - {tier.capitalize()} Pass',
+                    },
+                    'unit_amount': amount,
+                    'recurring': {'interval': 'month'},
+                },
+                'quantity': 1,
+            }],
+            mode='subscription',
+            customer_email=email,
+            success_url=f"{frontend_url}?success=true",
+            cancel_url=f"{frontend_url}?canceled=true",
+        )
+        return jsonify({"success": True, "url": checkout_session.url})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
