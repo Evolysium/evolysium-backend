@@ -370,8 +370,7 @@ def create_checkout_session():
     frontend_url = os.environ.get("FRONTEND_URL", "https://evolysium.github.io/evolysium-frontend/")
 
     try:
-        session_data = {
-            'payment_method_types': ['card'],
+        session_params = {
             'line_items': [{
                 'price_data': {
                     'currency': 'eur',
@@ -389,9 +388,9 @@ def create_checkout_session():
         }
         
         if email:
-            session_data['customer_email'] = email
+            session_params['customer_email'] = email
 
-        checkout_session = stripe.checkout.sessions.create(**session_data)
+        checkout_session = stripe.checkout.sessions.create(**session_params)
         return jsonify({"success": True, "url": checkout_session.url})
         
     except Exception as e:
@@ -399,6 +398,7 @@ def create_checkout_session():
         print("STRIPE DETALJNA GREŠKA:", repr(e))
         print("TRACEBACK:", traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
