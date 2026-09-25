@@ -293,7 +293,6 @@ def newsletter_subscribe():
 
 @app.route("/api/tiers", methods=["GET"])
 def get_tiers():
-    """Endpoint za dohvat pretplata, cijena i opcija (features) za frontend."""
     tiers_data = [
         {
             "id": "explorer",
@@ -348,7 +347,6 @@ def create_checkout_session():
     tier = data.get("tier", "creator")
     email = data.get("email")
 
-    # Dohvat ključa i provjera duljine za debugiranje
     stripe_key = os.environ.get("STRIPE_SECRET_KEY", "").strip()
     print(f"DEBUG - Stripe key length: {len(stripe_key)}")
 
@@ -357,7 +355,6 @@ def create_checkout_session():
 
     stripe.api_key = stripe_key
 
-    # Ispravljene i usklađene cijene u centima prema tvojim zahtjevima
     prices = {
         "explorer": 0,
         "creator": 899,   # 8.99 €
