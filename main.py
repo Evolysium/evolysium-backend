@@ -291,6 +291,57 @@ def newsletter_subscribe():
     except Exception as e:
         return jsonify({"success": False, "error": "Ovaj email je već prijavljen ili je došlo do greške."}), 400
 
+@app.route("/api/tiers", methods=["GET"])
+def get_tiers():
+    """Endpoint za dohvat pretplata, cijena i opcija (features) za frontend."""
+    tiers_data = [
+        {
+            "id": "explorer",
+            "name": "Explorer",
+            "price": 0,
+            "features": [
+                "Access to global public feed",
+                "Basic story viewing",
+                "Standard data refresh rate",
+                "Community support access"
+            ]
+        },
+        {
+            "id": "creator",
+            "name": "Pro / Personal",
+            "price": 8.99,
+            "features": [
+                "Ad-free platform stream",
+                "Private/Public story controls",
+                "Real-time signal filtering",
+                "Priority email support"
+            ]
+        },
+        {
+            "id": "business",
+            "name": "Business / Creator",
+            "price": 11.99,
+            "features": [
+                "Priority public post placement",
+                "Advanced story analytics",
+                "Custom API data exports",
+                "Multi-user workspace access"
+            ]
+        },
+        {
+            "id": "elite",
+            "name": "VIP / Enterprise",
+            "price": 24.99,
+            "features": [
+                "White-label feed",
+                "VIP status badge & perks",
+                "Dedicated account manager",
+                "Custom webhooks & integrations"
+            ]
+        }
+    ]
+    return jsonify({"success": True, "tiers": tiers_data})
+
 @app.route("/api/payment/create-checkout-session", methods=["POST"])
 def create_checkout_session():
     data = request.json or {}
@@ -306,9 +357,10 @@ def create_checkout_session():
 
     stripe.api_key = stripe_key
 
+    # Ispravljene i usklađene cijene u centima prema tvojim zahtjevima
     prices = {
         "explorer": 0,
-        "creator": 899,   # 8.99 € (usklađeno sa Stripe-om)
+        "creator": 899,   # 8.99 €
         "business": 1199, # 11.99 €
         "elite": 2499     # 24.99 €
     }
