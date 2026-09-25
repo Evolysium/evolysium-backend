@@ -308,12 +308,12 @@ def create_checkout_session():
 
     prices = {
         "explorer": 0,
-        "creator": 999,   # 9.99 €
+        "creator": 899,   # 8.99 € (usklađeno sa Stripe-om)
         "business": 1199, # 11.99 €
         "elite": 2499     # 24.99 €
     }
 
-    amount = prices.get(tier, 999)
+    amount = prices.get(tier, 899)
     
     if amount == 0:
         return jsonify({"success": False, "error": "Selected tier is free and cannot be checked out."}), 400
