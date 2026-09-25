@@ -395,9 +395,10 @@ def create_checkout_session():
         return jsonify({"success": True, "url": checkout_session.url})
         
     except Exception as e:
-        err_msg = str(e)
-        print(f"STRIPE DETALJNA GREŠKA: {err_msg}")
-        return jsonify({"success": False, "error": err_msg}), 500
+        import traceback
+        print("STRIPE DETALJNA GREŠKA:", repr(e))
+        print("TRACEBACK:", traceback.format_exc())
+        return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
