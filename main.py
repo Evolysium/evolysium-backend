@@ -201,7 +201,7 @@ def get_clean_feed():
 
     if supabase:
         try:
-            res = supabase.table("signals").select("*").in_("platform", selected_platforms).in_("category", selected_categories).limit(50).execute()
+            res = supabase.table("vibe_trails").select("*").in_("platform", selected_platforms).in_("category", selected_categories).limit(50).execute()
             if res.data:
                 all_cards.extend(res.data)
         except Exception as e:
@@ -250,7 +250,7 @@ def get_clean_feed():
         "items": all_cards
     })
 
-# --- NOVA RUTA ZA KREIRANJE OBJAVA I STORIEJA ---
+# --- RUTA ZA KREIRANJE OBJAVA I STORIEJA ---
 @app.route("/api/posts/create", methods=["POST"])
 def create_post():
     data = request.json or {}
@@ -284,7 +284,7 @@ def create_post():
 
     if supabase:
         try:
-            response = supabase.table("signals").insert(new_signal).execute()
+            response = supabase.table("vibe_trails").insert(new_signal).execute()
             return jsonify({
                 "success": True, 
                 "message": "Uspješno objavljeno i vidljivo u feedu!",
