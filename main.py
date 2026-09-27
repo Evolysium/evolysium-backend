@@ -189,10 +189,10 @@ def home():
 
 @app.route("/api/feed", methods=["GET"])
 def get_clean_feed():
-    platforms_param = request.args.get("platforms", "tiktok,instagram,reddit,x,linkedin")
+    platforms_param = request.args.get("platforms", "tiktok,instagram,reddit,x,linkedin,evolysium")
     selected_platforms = [p.strip().lower() for p in platforms_param.split(",") if p.strip()]
 
-    categories_param = request.args.get("categories", "tech,gaming,luxury,lifestyle")
+    categories_param = request.args.get("categories", "tech,gaming,luxury,lifestyle,crypto,18plus")
     selected_categories = [c.strip().lower() for c in categories_param.split(",") if c.strip()]
 
     search_query = request.args.get("search", "").strip().lower()
@@ -214,7 +214,7 @@ def get_clean_feed():
                 all_cards.extend(reddit_items)
 
         for platform in selected_platforms:
-            if platform in ["tiktok", "instagram", "x", "linkedin"]:
+            if platform in ["tiktok", "instagram", "x", "linkedin", "evolysium"]:
                 all_cards.extend(generate_mock_platform_data(platform, selected_categories))
 
     if search_query:
@@ -250,11 +250,57 @@ def get_clean_feed():
         "items": all_cards
     })
 
+# --- NOVA RUTA ZA KREIRANJE OBJAVA I STORIEJA ---
+@app.route("/api/posts/create", methods=["POST"])
+def create_post():
+    data = request.json or {}
+    
+    platform = data.get("platform", "evolysium").strip().lower()
+    category = data.get("category", "tech").strip().lower()
+    title = data.get("title", "").strip()
+    summary = data.get("summary", "").strip()
+    image = data.get("image", "").strip()
+    video_url = data.get("video_url", "").strip()
+    is_story = data.get("is_story", False)
+
+    if not title:
+        return jsonify({"success": False, "error": "Naslov objave je obavezan."}), 400
+
+    pool = CATEGORY_MEDIA_POOL.get(category, CATEGORY_MEDIA_POOL["tech"])
+    
+    new_signal = {
+        "platform": platform,
+        "category": category,
+        "source": f"{platform.upper()} // Korisnički sadržaj {'(Story)' if is_story else '(Objava)'}",
+        "title": title,
+        "summary": summary or title,
+        "url": data.get("url", "https://evolysium.github.io/evolysium-frontend/"),
+        "image": image if image else random.choice(pool["images"]),
+        "video_url": video_url if video_url else random.choice(pool["videos"]),
+        "score": 99,  # Visoki prioritet za nove objave da budu na vrhu
+        "sentiment": "User Alpha",
+        "keywords": [category, platform, "story" if is_story else "post"]
+    }
+
+    if supabase:
+        try:
+            response = supabase.table("signals").insert(new_signal).execute()
+            return jsonify({
+                "success": True, 
+                "message": "Uspješno objavljeno i vidljivo u feedu!",
+                "data": response.data
+            })
+        except Exception as e:
+            print(f"Supabase insert error: {e}")
+            return jsonify({"success": False, "error": f"Greška pri spremanju u bazu: {str(e)}"}), 500
+    else:
+        return jsonify({"success": False, "error": "Supabase baza nije konfigurirana na poslužitelju."}), 500
+
 # --- RUTE: AUTENTIFIKACIJA, NEWSLETTER I STRIPE ---
 
 @app.route("/api/auth/register", methods=["POST"])
 def register_user():
-    data = request.json
+    data = request.json or {}
     email = data.get("email")
     password = data.get("password")
 
@@ -276,7 +322,7 @@ def register_user():
 
 @app.route("/api/newsletter/subscribe", methods=["POST"])
 def newsletter_subscribe():
-    data = request.json
+    data = request.json or {}
     email = data.get("email")
 
     if not email:
@@ -348,7 +394,6 @@ def create_checkout_session():
     email = data.get("email")
 
     stripe_key = os.environ.get("STRIPE_SECRET_KEY", "").strip()
-    print(f"DEBUG - Stripe key length: {len(stripe_key)}")
 
     if not stripe_key or len(stripe_key) < 10:
         return jsonify({"success": False, "error": "STRIPE_SECRET_KEY nedostaje ili je nevažeći na Renderu."}), 500
@@ -357,9 +402,9 @@ def create_checkout_session():
 
     prices = {
         "explorer": 0,
-        "creator": 899,   # 8.99 €
-        "business": 1199, # 11.99 €
-        "elite": 2499     # 24.99 €
+        "creator": 899,
+        "business": 1199,
+        "elite": 2499
     }
 
     amount = prices.get(tier, 899)
@@ -390,13 +435,12 @@ def create_checkout_session():
         if email:
             session_params['customer_email'] = email
 
-        # Ispravljeno: stripe.checkout.Session.create (veliko S)
         checkout_session = stripe.checkout.Session.create(**session_params)
         return jsonify({"success": True, "url": checkout_session.url})
         
     except Exception as e:
         import traceback
-        print("STRIPE DETALJNA GREŠKA:", repr(e))
+        print("STRIPE ERROR:", repr(e))
         print("TRACEBACK:", traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
 
