@@ -201,7 +201,7 @@ def get_clean_feed():
 
     if supabase:
         try:
-            # Uklonjen fiksni limit od 50 kako bi feed bio u potpunosti neograničen (unlimited)
+            # Uklonjen fiksni limit za potpuno neograničen (unlimited) feed
             res = supabase.table("vibe_trails").select("*").in_("platform", selected_platforms).in_("category", selected_categories).execute()
             if res.data:
                 all_cards.extend(res.data)
@@ -430,7 +430,7 @@ def create_checkout_session():
             }],
             'mode': 'subscription',
             'success_url': f"{frontend_url}?success=true",
-            'cancel_url": f"{frontend_url}?canceled=true",
+            'cancel_url': f"{frontend_url}?canceled=true",
         }
         
         if email:
