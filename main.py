@@ -103,7 +103,7 @@ def fetch_reddit_data(categories):
     for cat in categories:
         sub = REDDIT_MAP.get(cat, "all")
         try:
-            url = f"https://www.reddit.com/r/{sub}/hot.json?limit=3"
+            url = f"https://www.reddit.com/r/{sub}/hot.json?limit=10"
             res = requests.get(url, headers=headers, timeout=4)
             if res.status_code == 200:
                 data = res.json()
@@ -114,7 +114,7 @@ def fetch_reddit_data(categories):
                         posts.append({
                             "platform": "reddit",
                             "category": cat,
-                            "source": f"Reddit // r/{sub}",
+                            "source": f"Evolysium // r/{sub}",
                             "title": f"⚡ {pdata.get('title')}",
                             "summary": (pdata.get("selftext") or pdata.get("title"))[:180] + "...",
                             "url": f"https://reddit.com{pdata.get('permalink')}",
@@ -171,7 +171,7 @@ def generate_mock_platform_data(platform, categories):
         results.append({
             "platform": platform,
             "category": cat,
-            "source": f"{platform.upper()} // Alpha Terminal",
+            "source": "Evolysium Network",
             "title": f"⚡ {chosen_title}",
             "summary": chosen_summary,
             "url": "https://evolysium.github.io/evolysium-frontend/",
@@ -201,7 +201,8 @@ def get_clean_feed():
 
     if supabase:
         try:
-            res = supabase.table("vibe_trails").select("*").in_("platform", selected_platforms).in_("category", selected_categories).limit(50).execute()
+            # Uklonjen fiksni limit od 50 kako bi feed bio u potpunosti neograničen (unlimited)
+            res = supabase.table("vibe_trails").select("*").in_("platform", selected_platforms).in_("category", selected_categories).execute()
             if res.data:
                 all_cards.extend(res.data)
         except Exception as e:
@@ -271,13 +272,13 @@ def create_post():
     new_signal = {
         "platform": platform,
         "category": category,
-        "source": f"{platform.upper()} // Korisnički sadržaj {'(Story)' if is_story else '(Objava)'}",
+        "source": f"Evolysium // {'Story' if is_story else 'Objava'}",
         "title": title,
         "summary": summary or title,
         "url": data.get("url", "https://evolysium.github.io/evolysium-frontend/"),
         "image": image if image else random.choice(pool["images"]),
         "video_url": video_url if video_url else random.choice(pool["videos"]),
-        "score": 99,  # Visoki prioritet za nove objave da budu na vrhu
+        "score": 99,  
         "sentiment": "User Alpha",
         "keywords": [category, platform, "story" if is_story else "post"]
     }
@@ -429,7 +430,7 @@ def create_checkout_session():
             }],
             'mode': 'subscription',
             'success_url': f"{frontend_url}?success=true",
-            'cancel_url': f"{frontend_url}?canceled=true",
+            'cancel_url": f"{frontend_url}?canceled=true",
         }
         
         if email:
