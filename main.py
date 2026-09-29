@@ -26,7 +26,7 @@ if supabase_url and supabase_key:
     except Exception as e:
         print(f"Failed to initialize Supabase: {e}")
 
-# Media & Hype pool za raznolike vizuale, videe i oštar copy
+# Media pool za Evolysium
 CATEGORY_MEDIA_POOL = {
     "tech": {
         "images": [
@@ -112,17 +112,17 @@ def fetch_reddit_data(categories):
                     if not pdata.get("stickied"):
                         pool = CATEGORY_MEDIA_POOL.get(cat, CATEGORY_MEDIA_POOL["tech"])
                         posts.append({
-                            "platform": "reddit",
+                            "platform": "evolysium",
                             "category": cat,
-                            "source": f"Evolysium // r/{sub}",
+                            "source": "Evolysium Stream",
                             "title": f"⚡ {pdata.get('title')}",
                             "summary": (pdata.get("selftext") or pdata.get("title"))[:180] + "...",
                             "url": f"https://reddit.com{pdata.get('permalink')}",
                             "image": random.choice(pool["images"]),
                             "video_url": random.choice(pool["videos"]),
                             "score": random.randint(92, 99),
-                            "sentiment": "Community Alpha",
-                            "keywords": [cat, "reddit", sub]
+                            "sentiment": "Evolysium Signal",
+                            "keywords": [cat, "evolysium"]
                         })
         except Exception as e:
             print(f"Reddit error on {cat}: {e}")
@@ -132,44 +132,44 @@ def generate_mock_platform_data(platform, categories):
     results = []
     hype_titles = {
         "tech": [
-            "Zero-Day Leak: What Big Tech Isn't Telling You About AI Agents",
-            "The Silent Shift: Open-Source Models Just Crushed Proprietary APIs"
+            "Evolysium Core Update: Decentralized AI Agent Routing Live",
+            "Next-Gen Protocol Architecture Released on Evolysium Network"
         ],
         "gaming": [
-            "Meta Shaking Patch: Top Ranked Build Everyone Is Copying Now",
-            "Unreleased Footage: Inside the Next Unreal Engine 5 Sandbox"
+            "Evolysium Arena: High-Performance Sandbox Node Integration",
+            "Optimized Latency Framework for Distributed Gaming Streams"
         ],
         "crypto": [
-            "Whale Watch: $400M Flowing Into Accumulation Wallets Right Now",
-            "Liquidity Cascade Incoming: Key Technical Level to Watch"
+            "Evolysium Liquidity Stream: Real-Time Node Tracking Active",
+            "Cross-Chain Asset Flow and Validator Synchronization"
         ],
         "lifestyle": [
-            "High-Output Routine: How Founders Hack Deep Work in 4 Hours",
-            "Stealth Wealth Setup: Minimalist Spaces That Scream Authority"
+            "Evolysium Flow State: Optimized Workspace Protocol for Creators",
+            "Minimalist Infrastructure & High-Output Daily Routine"
         ],
         "luxury": [
-            "Off-Market Architectural Masterpiece Listed in Geneva",
-            "Rare Horology Drop: Why Independent Watchmakers Are Outperforming"
+            "Evolysium Vault: Exclusive Asset Tracking and Verified Drops",
+            "High-End Architecture & Private Network Highlights"
         ],
         "18plus": [
-            "Unfiltered Creator Economy: Inside Private Subscription Networks",
-            "High-Retention Niche Breakdown: What Scales Audiences Fast"
+            "Evolysium Private Stream: Encrypted Creator Network Access",
+            "Secured Monetization Channels for Independent Publishers"
         ]
     }
     hype_summaries = [
-        "No fluff. Raw signal extracted from high-engagement primary sources before mainstream picks it up.",
-        "Direct edge: Pattern recognized across 14,000+ active validator nodes and private feeds."
+        "Evolysium verified data stream. Direct signal processing with zero latency.",
+        "Active validator node consensus reached across the Evolysium ecosystem."
     ]
     for cat in categories:
         pool = CATEGORY_MEDIA_POOL.get(cat, CATEGORY_MEDIA_POOL["tech"])
         img_url = random.choice(pool["images"])
         vid_url = random.choice(pool["videos"])
-        t_list = hype_titles.get(cat, ["High-Impact Signal: Market Movement Detected"])
+        t_list = hype_titles.get(cat, ["Evolysium High-Impact Signal Detected"])
         chosen_title = random.choice(t_list)
         chosen_summary = random.choice(hype_summaries)
         score_base = random.randint(90, 99)
         results.append({
-            "platform": platform,
+            "platform": "evolysium",
             "category": cat,
             "source": "Evolysium Network",
             "title": f"⚡ {chosen_title}",
@@ -178,8 +178,8 @@ def generate_mock_platform_data(platform, categories):
             "image": img_url,
             "video_url": vid_url,
             "score": score_base,
-            "sentiment": "High Signal",
-            "keywords": [cat, platform, "alpha"]
+            "sentiment": "Evolysium Signal",
+            "keywords": [cat, "evolysium", "alpha"]
         })
     return results
 
@@ -189,7 +189,7 @@ def home():
 
 @app.route("/api/feed", methods=["GET"])
 def get_clean_feed():
-    platforms_param = request.args.get("platforms", "tiktok,instagram,reddit,x,linkedin,evolysium")
+    platforms_param = request.args.get("platforms", "evolysium")
     selected_platforms = [p.strip().lower() for p in platforms_param.split(",") if p.strip()]
 
     categories_param = request.args.get("categories", "tech,gaming,luxury,lifestyle,crypto,18plus")
@@ -201,22 +201,15 @@ def get_clean_feed():
 
     if supabase:
         try:
-            # Uklonjen fiksni limit za potpuno neograničen (unlimited) feed
-            res = supabase.table("vibe_trails").select("*").in_("platform", selected_platforms).in_("category", selected_categories).execute()
+            res = supabase.table("vibe_trails").select("*").in_("category", selected_categories).execute()
             if res.data:
                 all_cards.extend(res.data)
         except Exception as e:
             print(f"Supabase read error: {e}")
 
     if not all_cards:
-        if "reddit" in selected_platforms:
-            reddit_items = fetch_reddit_data(selected_categories)
-            if reddit_items:
-                all_cards.extend(reddit_items)
-
         for platform in selected_platforms:
-            if platform in ["tiktok", "instagram", "x", "linkedin", "evolysium"]:
-                all_cards.extend(generate_mock_platform_data(platform, selected_categories))
+            all_cards.extend(generate_mock_platform_data(platform, selected_categories))
 
     if search_query:
         all_cards = [
@@ -230,17 +223,17 @@ def get_clean_feed():
 
     if not all_cards:
         all_cards.append({
-            "platform": "system",
+            "platform": "evolysium",
             "category": "tech",
             "source": "Evolysium Core",
-            "title": "⚡ Signal Stream Clean",
-            "summary": "No matching active cluster. Rotate filter parameters for asymmetric feed.",
+            "title": "⚡ Evolysium Stream Clean",
+            "summary": "No active cluster found. System operational.",
             "url": "#",
             "image": CATEGORY_MEDIA_POOL["tech"]["images"][0],
             "video_url": CATEGORY_MEDIA_POOL["tech"]["videos"][0],
             "score": 100,
             "sentiment": "System Edge",
-            "keywords": ["system"]
+            "keywords": ["evolysium"]
         })
 
     return jsonify({
@@ -251,12 +244,11 @@ def get_clean_feed():
         "items": all_cards
     })
 
-# --- RUTA ZA KREIRANJE OBJAVA I STORIEJA ---
 @app.route("/api/posts/create", methods=["POST"])
 def create_post():
     data = request.json or {}
     
-    platform = data.get("platform", "evolysium").strip().lower()
+    platform = "evolysium"
     category = data.get("category", "tech").strip().lower()
     title = data.get("title", "").strip()
     summary = data.get("summary", "").strip()
@@ -279,8 +271,8 @@ def create_post():
         "image": image if image else random.choice(pool["images"]),
         "video_url": video_url if video_url else random.choice(pool["videos"]),
         "score": 99,  
-        "sentiment": "User Alpha",
-        "keywords": [category, platform, "story" if is_story else "post"]
+        "sentiment": "Evolysium User Alpha",
+        "keywords": [category, "evolysium", "story" if is_story else "post"]
     }
 
     if supabase:
@@ -288,7 +280,7 @@ def create_post():
             response = supabase.table("vibe_trails").insert(new_signal).execute()
             return jsonify({
                 "success": True, 
-                "message": "Uspješno objavljeno i vidljivo u feedu!",
+                "message": "Uspješno objavljeno na Evolysiumu!",
                 "data": response.data
             })
         except Exception as e:
@@ -296,8 +288,6 @@ def create_post():
             return jsonify({"success": False, "error": f"Greška pri spremanju u bazu: {str(e)}"}), 500
     else:
         return jsonify({"success": False, "error": "Supabase baza nije konfigurirana na poslužitelju."}), 500
-
-# --- RUTE: AUTENTIFIKACIJA, NEWSLETTER I STRIPE ---
 
 @app.route("/api/auth/register", methods=["POST"])
 def register_user():
@@ -315,7 +305,7 @@ def register_user():
         res = supabase.auth.sign_up({"email": email, "password": password})
         return jsonify({
             "success": True, 
-            "message": "Registracija uspješna! Provjerite email radi verifikacije.",
+            "message": "Registracija uspješna!",
             "data": res.user
         })
     except Exception as e:
@@ -334,7 +324,7 @@ def newsletter_subscribe():
 
     try:
         supabase.table("newsletter").insert({"email": email}).execute()
-        return jsonify({"success": True, "message": "Uspješno ste se prijavili na newsletter!"})
+        return jsonify({"success": True, "message": "Uspješno prijavljeni na Evolysium newsletter!"})
     except Exception as e:
         return jsonify({"success": False, "error": "Ovaj email je već prijavljen ili je došlo do greške."}), 400
 
@@ -346,7 +336,7 @@ def get_tiers():
             "name": "Explorer",
             "price": 0,
             "features": [
-                "Access to global public feed",
+                "Access to Evolysium public feed",
                 "Basic story viewing",
                 "Standard data refresh rate",
                 "Community support access"
@@ -357,7 +347,7 @@ def get_tiers():
             "name": "Pro / Personal",
             "price": 8.99,
             "features": [
-                "Ad-free platform stream",
+                "Ad-free Evolysium stream",
                 "Private/Public story controls",
                 "Real-time signal filtering",
                 "Priority email support"
@@ -379,7 +369,7 @@ def get_tiers():
             "name": "VIP / Enterprise",
             "price": 24.99,
             "features": [
-                "White-label feed",
+                "White-label Evolysium feed",
                 "VIP status badge & perks",
                 "Dedicated account manager",
                 "Custom webhooks & integrations"
@@ -397,7 +387,7 @@ def create_checkout_session():
     stripe_key = os.environ.get("STRIPE_SECRET_KEY", "").strip()
 
     if not stripe_key or len(stripe_key) < 10:
-        return jsonify({"success": False, "error": "STRIPE_SECRET_KEY nedostaje ili je nevažeći na Renderu."}), 500
+        return jsonify({"success": False, "error": "STRIPE_SECRET_KEY nedostaje."}), 500
 
     stripe.api_key = stripe_key
 
@@ -411,7 +401,7 @@ def create_checkout_session():
     amount = prices.get(tier, 899)
     
     if amount == 0:
-        return jsonify({"success": False, "error": "Selected tier is free and cannot be checked out."}), 400
+        return jsonify({"success": False, "error": "Free tier."}), 400
 
     frontend_url = os.environ.get("FRONTEND_URL", "https://evolysium.github.io/evolysium-frontend/")
 
@@ -440,9 +430,6 @@ def create_checkout_session():
         return jsonify({"success": True, "url": checkout_session.url})
         
     except Exception as e:
-        import traceback
-        print("STRIPE ERROR:", repr(e))
-        print("TRACEBACK:", traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
