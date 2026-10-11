@@ -26,7 +26,7 @@ if supabase_url and supabase_key:
     except Exception as e:
         print(f"Failed to initialize Supabase: {e}")
 
-# Media pool za Evolysium
+# Media pool za Evolysium (prošireno sa svim kategorijama)
 CATEGORY_MEDIA_POOL = {
     "tech": {
         "images": [
@@ -82,6 +82,46 @@ CATEGORY_MEDIA_POOL = {
         "videos": [
             "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4"
         ]
+    },
+    "fashion": {
+        "images": ["https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600&auto=format&fit=crop"],
+        "videos": []
+    },
+    "fitness": {
+        "images": ["https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600&auto=format&fit=crop"],
+        "videos": []
+    },
+    "travel": {
+        "images": ["https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=600&auto=format&fit=crop"],
+        "videos": []
+    },
+    "food": {
+        "images": ["https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&auto=format&fit=crop"],
+        "videos": []
+    },
+    "brand_story": {
+        "images": ["https://images.unsplash.com/photo-1557804506-669a67965ba0?w=600&auto=format&fit=crop"],
+        "videos": []
+    },
+    "recipe": {
+        "images": ["https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=600&auto=format&fit=crop"],
+        "videos": []
+    },
+    "diy": {
+        "images": ["https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600&auto=format&fit=crop"],
+        "videos": []
+    },
+    "digital_book": {
+        "images": ["https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&auto=format&fit=crop"],
+        "videos": []
+    },
+    "world_trend": {
+        "images": ["https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600&auto=format&fit=crop"],
+        "videos": []
+    },
+    "story": {
+        "images": ["https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop"],
+        "videos": []
     }
 }
 
@@ -94,6 +134,9 @@ REDDIT_MAP = {
     "architecture": "ArchitecturePorn",
     "crypto": "CryptoCurrency",
     "travel": "travel",
+    "fashion": "fashion",
+    "fitness": "fitness",
+    "food": "food",
     "18plus": "nsfw"
 }
 
@@ -118,8 +161,8 @@ def fetch_reddit_data(categories):
                             "title": f"⚡ {pdata.get('title')}",
                             "summary": (pdata.get("selftext") or pdata.get("title"))[:180] + "...",
                             "url": f"https://reddit.com{pdata.get('permalink')}",
-                            "image": random.choice(pool["images"]),
-                            "video_url": random.choice(pool["videos"]),
+                            "image": random.choice(pool["images"] if pool["images"] else ["https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600"]),
+                            "video_url": random.choice(pool["videos"]) if pool["videos"] else "",
                             "score": random.randint(92, 99),
                             "sentiment": "Evolysium Signal",
                             "keywords": [cat, "evolysium"]
@@ -162,8 +205,8 @@ def generate_mock_platform_data(platform, categories):
     ]
     for cat in categories:
         pool = CATEGORY_MEDIA_POOL.get(cat, CATEGORY_MEDIA_POOL["tech"])
-        img_url = random.choice(pool["images"])
-        vid_url = random.choice(pool["videos"])
+        img_url = random.choice(pool["images"] if pool["images"] else ["https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600"])
+        vid_url = random.choice(pool["videos"]) if pool["videos"] else ""
         t_list = hype_titles.get(cat, ["Evolysium High-Impact Signal Detected"])
         chosen_title = random.choice(t_list)
         chosen_summary = random.choice(hype_summaries)
@@ -192,7 +235,7 @@ def get_clean_feed():
     platforms_param = request.args.get("platforms", "evolysium")
     selected_platforms = [p.strip().lower() for p in platforms_param.split(",") if p.strip()]
 
-    categories_param = request.args.get("categories", "tech,gaming,luxury,lifestyle,crypto,18plus")
+    categories_param = request.args.get("categories", "tech,gaming,luxury,lifestyle,crypto,18plus,fashion,fitness,travel,food,brand_story,recipe,diy,digital_book,world_trend,story")
     selected_categories = [c.strip().lower() for c in categories_param.split(",") if c.strip()]
 
     search_query = request.args.get("search", "").strip().lower()
@@ -249,10 +292,10 @@ def create_post():
     data = request.json or {}
     
     platform = "evolysium"
-    category = data.get("category", "tech").strip().lower()
+    category = data.get("category", data.get("cat", "tech")).strip().lower()
     title = data.get("title", "").strip()
     summary = data.get("summary", "").strip()
-    image = data.get("image", "").strip()
+    image = data.get("image", data.get("img_url", "")).strip()
     video_url = data.get("video_url", "").strip()
     is_story = data.get("is_story", False)
 
@@ -268,8 +311,8 @@ def create_post():
         "title": title,
         "summary": summary or title,
         "url": data.get("url", "https://evolysium.github.io/evolysium-frontend/"),
-        "image": image if image else random.choice(pool["images"]),
-        "video_url": video_url if video_url else random.choice(pool["videos"]),
+        "image": image if image else (pool["images"][0] if pool["images"] else "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600"),
+        "video_url": video_url if video_url else (pool["videos"][0] if pool["videos"] else ""),
         "score": 99,  
         "sentiment": "Evolysium User Alpha",
         "keywords": [category, "evolysium", "story" if is_story else "post"]
