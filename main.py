@@ -362,31 +362,20 @@ def create_checkout_session():
 
     stripe.api_key = stripe_key
 
-    # Ažurirane cijene u centima prema tvojim novim paketima:
-    # essential: €299 -> 29900 centi
-    # professional: €899 -> 89900 centi
-    # enterprise: €1199 -> 119900 centi
-    prices = {
-        "essential": 29900,
-        "professional": 89900,
-        "enterprise": 119900
+    # Ovdje upiši prave ID-jeve cijena (Price ID) koje si kopirao iz svog Stripe Dashboarda
+    price_mapping = {
+        "essential": "price_1UJi0M5Y0NKGSS7msT8FpLlI",       # npr. price_1Mx...
+        "professional": "price_1UJi1C5Y0NKGSS7mTI1Zaxp7",    # npr. price_1My...
+        "enterprise": "price_1UJi1s5Y0NKGSS7ma6uGhJ1M"     # npr. price_1Mz...
     }
 
-    amount = prices.get(tier, 29900)
-
+    selected_price_id = price_mapping.get(tier, price_mapping["essential"])
     frontend_url = os.environ.get("FRONTEND_URL", "https://evolysium.github.io/evolysium-frontend/")
 
     try:
         session_params = {
             'line_items': [{
-                'price_data': {
-                    'currency': 'eur',
-                    'product_data': {
-                        'name': f'Evolysium - {tier.capitalize()} Plan',
-                    },
-                    'unit_amount': amount,
-                    'recurring': {'interval': 'month'},
-                },
+                'price': selected_price_id,  # Koristi direktno Stripe Price ID
                 'quantity': 1,
             }],
             'mode': 'subscription',
