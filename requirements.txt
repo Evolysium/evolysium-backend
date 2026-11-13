@@ -1,7 +1,5 @@
-flask
-gunicorn
-requests
-google-generativeai
-flask-cors
-supabase
-stripe
+flask>=3.0,<4
+flask-cors>=4.0
+gunicorn>=22.0
+stripe>=11,<12
+supabase>=2.8,<3
