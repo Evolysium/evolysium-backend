@@ -1,397 +1,309 @@
+"""Evolysium backend (Flask): Stripe Connect payments, milestone escrow, plan subscriptions.
+
+Environment variables (Render):
+  SUPABASE_URL, SUPABASE_KEY (the SERVICE ROLE key, never put it in index.html),
+  STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+  APP_URL (the public URL of this service, e.g. https://evolysium-backend.onrender.com),
+  optional: PRICE_ESSENTIAL, PRICE_PROFESSIONAL, PRICE_ENTERPRISE (Stripe price IDs)
+Start command: gunicorn main:app
+"""
+import json
 import os
-import random
-import requests
-from flask import Flask, jsonify, request, render_template
-from flask_cors import CORS
-import google.generativeai as genai
-from supabase import create_client, Client
+from datetime import datetime, timezone
+from functools import wraps
+
 import stripe
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+from supabase import create_client
+from werkzeug.exceptions import HTTPException
+
+BASE = os.path.dirname(os.path.abspath(__file__))
+APP_URL = os.environ.get("APP_URL", "").rstrip("/")
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+db = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+
+MIN_CENTS, MAX_CENTS, FEE_RATE = 50, 10_000_000, 0.0015  # 0.15% fee on direct payments
+PRICES = {  # Replace with your LIVE price IDs (or set the env vars) when you go live.
+    "essential": os.environ.get("PRICE_ESSENTIAL", "price_1UJi0M5Y0NKGSS7msT8FpLlI"),
+    "professional": os.environ.get("PRICE_PROFESSIONAL", "price_1UJi1C5Y0NKGSS7mTI1Zaxp7"),
+    "enterprise": os.environ.get("PRICE_ENTERPRISE", "price_1UJi1s5Y0NKGSS7ma6uGhJ1M"),
+}
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=[APP_URL] if APP_URL else [])  # same-origin needs no CORS; others are blocked
 
-# Initialize Gemini AI
-api_key = os.environ.get("GEMINI_API_KEY")
-if api_key:
-    genai.configure(api_key=api_key)
 
-# Initialize Supabase Client
-supabase_url = os.environ.get("SUPABASE_URL")
-supabase_key = os.environ.get("SUPABASE_KEY")
-supabase: Client = None
+# ---------- helpers ----------
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
-if supabase_url and supabase_key:
-    try:
-        supabase = create_client(supabase_url, supabase_key)
-    except Exception as e:
-        print(f"Failed to initialize Supabase: {e}")
 
-# In-memory fallback lista za objave ako Supabase nije spojen
-IN_MEMORY_POSTS = []
+def short(i):
+    return i[:8].upper()
 
-# Media pool za Evolysium (prošireno sa svim kategorijama)
-CATEGORY_MEDIA_POOL = {
-    "tech": {
-        "images": [
-            "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=600&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&auto=format&fit=crop"
-        ],
-        "videos": [
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
-        ]
-    },
-    "gaming": {
-        "images": [
-            "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=600&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1511512578047-dfb367046420?w=600&auto=format&fit=crop"
-        ],
-        "videos": [
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
-        ]
-    },
-    "crypto": {
-        "images": [
-            "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=600&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w=600&auto=format&fit=crop"
-        ],
-        "videos": [
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoy.mp4"
-        ]
-    },
-    "lifestyle": {
-        "images": [
-            "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop"
-        ],
-        "videos": [
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
-        ]
-    },
-    "luxury": {
-        "images": [
-            "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=600&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=600&auto=format&fit=crop"
-        ],
-        "videos": [
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackSeeTheWorld.mp4"
-        ]
-    },
-    "18plus": {
-        "images": [
-            "https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=600&auto=format&fit=crop"
-        ],
-        "videos": [
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4"
-        ]
-    },
-    "fashion": {
-        "images": ["https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600&auto=format&fit=crop"],
-        "videos": []
-    },
-    "fitness": {
-        "images": ["https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600&auto=format&fit=crop"],
-        "videos": []
-    },
-    "travel": {
-        "images": ["https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=600&auto=format&fit=crop"],
-        "videos": []
-    },
-    "food": {
-        "images": ["https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&auto=format&fit=crop"],
-        "videos": []
-    },
-    "brand_story": {
-        "images": ["https://images.unsplash.com/photo-1557804506-669a67965ba0?w=600&auto=format&fit=crop"],
-        "videos": []
-    },
-    "recipe": {
-        "images": ["https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=600&auto=format&fit=crop"],
-        "videos": []
-    },
-    "diy": {
-        "images": ["https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600&auto=format&fit=crop"],
-        "videos": []
-    },
-    "digital_book": {
-        "images": ["https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&auto=format&fit=crop"],
-        "videos": []
-    },
-    "world_trend": {
-        "images": ["https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600&auto=format&fit=crop"],
-        "videos": []
-    },
-    "story": {
-        "images": ["https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop"],
-        "videos": []
-    },
-    "brand": {
-        "images": ["https://images.unsplash.com/photo-1557804506-669a67965ba0?w=600&auto=format&fit=crop"],
-        "videos": []
-    }
-}
 
-REDDIT_MAP = {
-    "tech": "technology",
-    "gaming": "gaming",
-    "lifestyle": "lifestyle",
-    "funny": "funny",
-    "luxury": "Luxury",
-    "architecture": "ArchitecturePorn",
-    "crypto": "CryptoCurrency",
-    "travel": "travel",
-    "fashion": "fashion",
-    "fitness": "fitness",
-    "food": "food",
-    "18plus": "nsfw"
-}
+def first(res):
+    return res.data[0] if res.data else None
 
-def generate_mock_platform_data(platform, categories):
-    results = []
-    hype_titles = {
-        "tech": [
-            "Evolysium Core Update: Decentralized AI Agent Routing Live",
-            "Next-Gen Protocol Architecture Released on Evolysium Network"
-        ],
-        "gaming": [
-            "Evolysium Arena: High-Performance Sandbox Node Integration",
-            "Optimized Latency Framework for Distributed Gaming Streams"
-        ],
-        "crypto": [
-            "Evolysium Liquidity Stream: Real-Time Node Tracking Active",
-            "Cross-Chain Asset Flow and Validator Synchronization"
-        ],
-        "lifestyle": [
-            "Evolysium Flow State: Optimized Workspace Protocol for Creators",
-            "Minimalist Infrastructure & High-Output Daily Routine"
-        ],
-        "luxury": [
-            "Evolysium Vault: Exclusive Asset Tracking and Verified Drops",
-            "High-End Architecture & Private Network Highlights"
-        ],
-        "18plus": [
-            "Evolysium Private Stream: Encrypted Creator Network Access",
-            "Secured Monetization Channels for Independent Publishers"
-        ]
-    }
-    hype_summaries = [
-        "Evolysium verified data stream. Direct signal processing with zero latency.",
-        "Active validator node consensus reached across the Evolysium ecosystem."
-    ]
-    for cat in categories:
-        pool = CATEGORY_MEDIA_POOL.get(cat, CATEGORY_MEDIA_POOL["tech"])
-        img_url = random.choice(pool["images"] if pool["images"] else ["https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600"])
-        vid_url = random.choice(pool["videos"]) if pool["videos"] else ""
-        t_list = hype_titles.get(cat, ["Evolysium High-Impact Signal Detected"])
-        chosen_title = random.choice(t_list)
-        chosen_summary = random.choice(hype_summaries)
-        score_base = random.randint(90, 99)
-        results.append({
-            "id": f"mock_{cat}_{random.randint(1000,9999)}",
-            "platform": "evolysium",
-            "category": cat,
-            "cat": cat,
-            "source": "Evolysium Network",
-            "creator": "@evolysium_core",
-            "title": f"⚡ {chosen_title}",
-            "summary": chosen_summary,
-            "url": "https://evolysium.github.io/evolysium-frontend/",
-            "image": img_url,
-            "img_url": img_url,
-            "video_url": vid_url,
-            "score": score_base,
-            "sentiment": "Evolysium Signal",
-            "keywords": [cat, "evolysium", "alpha"]
-        })
-    return results
 
-@app.route("/")
-def home():
-    return render_template("index.html")
+def log(**row):
+    db.table("ledger").insert(row).execute()
 
-@app.route("/api/feed", methods=["GET"])
-def get_clean_feed():
-    platforms_param = request.args.get("platforms", "evolysium")
-    selected_platforms = [p.strip().lower() for p in platforms_param.split(",") if p.strip()]
 
-    categories_param = request.args.get("categories", "tech,gaming,luxury,lifestyle,crypto,18plus,fashion,fitness,travel,food,brand_story,recipe,diy,digital_book,world_trend,story,brand,funny,architecture,movies,reels,popular,trending")
-    selected_categories = [c.strip().lower() for c in categories_param.split(",") if c.strip()]
+def fail(msg, code=400):
+    return jsonify(error=msg), code
 
-    search_query = request.args.get("search", "").strip().lower()
 
-    all_cards = []
+def body():
+    return request.get_json(silent=True) or {}
 
-    # Učitaj iz Supabase ako postoji
-    if supabase:
+
+def valid_amount(v):
+    return isinstance(v, int) and not isinstance(v, bool) and MIN_CENTS <= v <= MAX_CENTS
+
+
+def authed(fn):
+    """Verifies the Supabase access token sent by the browser."""
+    @wraps(fn)
+    def inner(*args, **kwargs):
+        token = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
         try:
-            res = supabase.table("vibe_trails").select("*").execute()
-            if res.data:
-                all_cards.extend(res.data)
-        except Exception as e:
-            print(f"Supabase read error: {e}")
-
-    # Dodaj i lokalno spremljene objave s backenda
-    all_cards.extend(IN_MEMORY_POSTS)
-
-    # Ako nema dovoljno objava, generiraj mock podatke
-    if not all_cards:
-        for platform in selected_platforms:
-            all_cards.extend(generate_mock_platform_data(platform, selected_categories))
-
-    if search_query:
-        all_cards = [
-            card for card in all_cards 
-            if search_query in card.get("title", "").lower() 
-            or search_query in card.get("summary", "").lower()
-            or any(search_query in str(k).lower() for k in card.get("keywords", []))
-        ]
-
-    all_cards.sort(key=lambda x: x.get("score", 0), reverse=True)
-
-    return jsonify({
-        "success": True,
-        "count": len(all_cards),
-        "active_platforms": selected_platforms,
-        "active_categories": selected_categories,
-        "items": all_cards
-    })
-
-@app.route("/api/posts/create", methods=["POST"])
-def create_post():
-    data = request.json or {}
-    
-    platform = "evolysium"
-    category = data.get("category", data.get("cat", "tech")).strip().lower()
-    title = data.get("title", "").strip()
-    summary = data.get("summary", "").strip()
-    image = data.get("image", data.get("img_url", "")).strip()
-    video_url = data.get("video_url", "").strip()
-    is_story = data.get("is_story", False)
-    creator = data.get("creator", data.get("source", "@my_profile"))
-
-    if not title:
-        return jsonify({"success": False, "error": "Naslov objave je obavezan."}), 400
-
-    pool = CATEGORY_MEDIA_POOL.get(category, CATEGORY_MEDIA_POOL["tech"])
-    
-    new_signal = {
-        "id": f"post_{random.randint(10000, 99999)}",
-        "platform": platform,
-        "category": category,
-        "cat": category,
-        "source": creator,
-        "creator": creator,
-        "title": title,
-        "summary": summary or title,
-        "url": data.get("url", "https://evolysium.github.io/evolysium-frontend/"),
-        "image": image if image else (pool["images"][0] if pool["images"] else "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600"),
-        "img_url": image if image else (pool["images"][0] if pool["images"] else "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600"),
-        "video_url": video_url if video_url else (pool["videos"][0] if pool["videos"] else ""),
-        "score": 99,  
-        "sentiment": "Evolysium User Alpha",
-        "keywords": [category, "evolysium", "story" if is_story else "post"]
-    }
-
-    # Spremi u Supabase ako je aktivan, u suprotnom spremi u memoriju
-    saved_to_db = False
-    if supabase:
-        try:
-            response = supabase.table("vibe_trails").insert(new_signal).execute()
-            saved_to_db = True
-        except Exception as e:
-            print(f"Supabase insert error: {e}")
-
-    if not saved_to_db:
-        IN_MEMORY_POSTS.insert(0, new_signal)
-
-    return jsonify({
-        "success": True, 
-        "message": "Uspješno objavljeno na Evolysiumu!",
-        "data": new_signal
-    })
-
-@app.route("/api/auth/register", methods=["POST"])
-def register_user():
-    data = request.json or {}
-    email = data.get("email")
-    password = data.get("password")
-
-    if not email or not password:
-        return jsonify({"success": False, "error": "Email i lozinka su obavezni."}), 400
-
-    if not supabase:
-        return jsonify({"success": True, "message": "Lokalna registracija uspješna (Supabase nije spojen)."}), 200
-
-    try:
-        res = supabase.auth.sign_up({"email": email, "password": password})
-        return jsonify({
-            "success": True, 
-            "message": "Registracija uspješna!",
-            "data": res.user
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 400
-
-@app.route("/api/newsletter/subscribe", methods=["POST"])
-def newsletter_subscribe():
-    data = request.json or {}
-    email = data.get("email")
-
-    if not email:
-        return jsonify({"success": False, "error": "Email je obavezan."}), 400
-
-    if supabase:
-        try:
-            supabase.table("newsletter").insert({"email": email}).execute()
+            user = db.auth.get_user(token).user
+            me = first(db.table("profiles").select("*").eq("id", user.id).limit(1).execute())
         except Exception:
-            pass
+            return fail("Please sign in again.", 401)
+        if not me:
+            return fail("Profile not found.", 401)
+        return fn(user, me, *args, **kwargs)
+    return inner
 
-    return jsonify({"success": True, "message": "Uspješno prijavljeni na Evolysium newsletter!"})
 
-@app.route("/api/payment/create-checkout-session", methods=["POST"])
-def create_checkout_session():
-    data = request.json or {}
-    tier = data.get("tier", "essential")
-    email = data.get("email")
+def find_payee(handle, me):
+    handle = str(handle or "").lower().strip()
+    payee = first(db.table("profiles").select("*").eq("handle", handle).limit(1).execute())
+    if not payee:
+        return None, "Recipient not found."
+    if payee["id"] == me["id"]:
+        return None, "You cannot pay yourself."
+    if not payee["payouts_enabled"]:
+        return None, "This recipient has not finished payout setup yet."
+    return payee, None
 
-    stripe_key = os.environ.get("STRIPE_SECRET_KEY", "").strip()
 
-    if not stripe_key or len(stripe_key) < 10:
-        return jsonify({"success": True, "url": "https://buy.stripe.com/simulate_test_checkout"}), 200
+def sync_account(a):
+    caps = a.get("capabilities") or {}
+    ok = caps.get("transfers") == "active" and bool(a.get("payouts_enabled")) and bool(a.get("details_submitted"))
+    db.table("profiles").update({"payouts_enabled": ok}).eq("stripe_account_id", a["id"]).execute()
+    return ok
 
-    stripe.api_key = stripe_key
 
-    # Ovdje upiši prave ID-jeve cijena (Price ID) koje si kopirao iz svog Stripe Dashboarda
-    price_mapping = {
-        "essential": "price_1UJi0M5Y0NKGSS7msT8FpLlI",       # npr. price_1Mx...
-        "professional": "price_1UJi1C5Y0NKGSS7mTI1Zaxp7",    # npr. price_1My...
-        "enterprise": "price_1UJi1s5Y0NKGSS7ma6uGhJ1M"     # npr. price_1Mz...
-    }
+@app.errorhandler(Exception)
+def on_error(e):
+    if isinstance(e, HTTPException):
+        return e
+    app.logger.exception(e)
+    return fail("Something went wrong. Please try again.", 500)
 
-    selected_price_id = price_mapping.get(tier, price_mapping["essential"])
-    frontend_url = os.environ.get("FRONTEND_URL", "https://evolysium.github.io/evolysium-frontend/")
 
+# ---------- pages ----------
+@app.get("/")
+def home():
+    return send_from_directory(os.path.join(BASE, "templates"), "index.html")
+
+
+@app.get("/healthz")
+def healthz():
+    return jsonify(ok=True)
+
+
+# ---------- Stripe webhook ----------
+def on_checkout(s):
+    meta = s.get("metadata") or {}
+    if s.get("mode") == "subscription":
+        db.table("subscriptions").upsert({
+            "user_id": s.get("client_reference_id"), "tier": meta.get("tier", "essential"),
+            "status": "active", "stripe_customer": s.get("customer"),
+            "stripe_subscription": s.get("subscription"),
+        }, on_conflict="user_id").execute()
+        return
+    if s.get("payment_status") != "paid":
+        return
+    if meta.get("kind") == "payment":
+        # The status filter makes this idempotent: only the first delivery logs.
+        p = first(db.table("payments").update({"status": "paid"})
+                  .eq("id", meta["payment_id"]).eq("status", "pending").execute())
+        if not p:
+            return
+        ref = "PAY-" + short(p["id"])
+        log(ref=ref + "-OUT", user_id=p["payer"], counterparty=p["payee_handle"], kind="payment",
+            note=p["note"], amount_cents=-p["amount_cents"], status="completed")
+        log(ref=ref + "-IN", user_id=p["payee"], counterparty=p["payer_handle"], kind="payment",
+            note=p["note"], amount_cents=p["amount_cents"] - p["fee_cents"], status="completed")
+    elif meta.get("kind") == "agreement":
+        a = first(db.table("agreements")
+                  .update({"status": "funded", "payment_intent": s.get("payment_intent")})
+                  .eq("id", meta["agreement_id"]).eq("status", "pending_payment").execute())
+        if a:
+            log(ref="AGR-" + short(a["id"]), user_id=a["payer"], counterparty=a["payee_handle"],
+                kind="agreement", note=a["title"], amount_cents=-a["amount_cents"], status="held")
+
+
+@app.post("/api/webhook")
+def webhook():
+    payload = request.get_data()
     try:
-        session_params = {
-            'line_items': [{
-                'price': selected_price_id,  # Koristi direktno Stripe Price ID
-                'quantity': 1,
-            }],
-            'mode': 'subscription',
-            'success_url': f"{frontend_url}?success=true",
-            'cancel_url': f"{frontend_url}?canceled=true",
-        }
-        
-        if email:
-            session_params['customer_email'] = email
+        stripe.Webhook.construct_event(payload, request.headers.get("Stripe-Signature", ""), WEBHOOK_SECRET)
+    except Exception:
+        return "Bad signature", 400
+    ev = json.loads(payload)
+    obj, kind = ev["data"]["object"], ev["type"]
+    if kind == "checkout.session.completed":
+        on_checkout(obj)
+    elif kind == "account.updated":
+        sync_account(obj)
+    elif kind in ("customer.subscription.updated", "customer.subscription.deleted"):
+        db.table("subscriptions").update({"status": obj["status"]}).eq("stripe_subscription", obj["id"]).execute()
+    return jsonify(received=True)  # errors above return 500, so Stripe retries
 
-        checkout_session = stripe.checkout.Session.create(**session_params)
-        return jsonify({"success": True, "url": checkout_session.url})
-        
-    except Exception as e:
-        return jsonify({"success": True, "url": "https://buy.stripe.com/simulate_test_checkout"}), 200
+
+# ---------- Connect onboarding ----------
+@app.post("/api/connect/onboard")
+@authed
+def connect_onboard(user, me):
+    acct_id = me.get("stripe_account_id")
+    if not acct_id:
+        acct = stripe.Account.create(type="express", email=user.email,
+                                     capabilities={"transfers": {"requested": True}},
+                                     metadata={"profile_id": me["id"]})
+        acct_id = acct["id"]
+        db.table("profiles").update({"stripe_account_id": acct_id}).eq("id", me["id"]).execute()
+    link = stripe.AccountLink.create(account=acct_id, type="account_onboarding",
+                                     refresh_url=f"{APP_URL}/?connect=refresh",
+                                     return_url=f"{APP_URL}/?connect=return")
+    return jsonify(url=link["url"])
+
+
+@app.post("/api/connect/status")
+@authed
+def connect_status(user, me):
+    if not me.get("stripe_account_id"):
+        return jsonify(enabled=False)
+    return jsonify(enabled=sync_account(stripe.Account.retrieve(me["stripe_account_id"])))
+
+
+# ---------- Flow 1: direct payment (destination charge) ----------
+@app.post("/api/pay")
+@authed
+def pay(user, me):
+    d = body()
+    amount = d.get("amountCents")
+    if not valid_amount(amount):
+        return fail("Invalid amount.")
+    payee, err = find_payee(d.get("payeeHandle"), me)
+    if err:
+        return fail(err)
+    fee = round(amount * FEE_RATE)
+    pay_row = first(db.table("payments").insert({
+        "payer": me["id"], "payee": payee["id"], "payer_handle": me["handle"], "payee_handle": payee["handle"],
+        "amount_cents": amount, "fee_cents": fee, "note": str(d.get("note") or "")[:200]}).execute())
+    intent = {"transfer_data": {"destination": payee["stripe_account_id"]}}
+    if fee > 0:
+        intent["application_fee_amount"] = fee
+    session = stripe.checkout.Session.create(
+        mode="payment", customer_email=user.email,
+        line_items=[{"quantity": 1, "price_data": {"currency": "eur", "unit_amount": amount,
+                     "product_data": {"name": f"Payment to {payee['handle']}"}}}],
+        payment_intent_data=intent,
+        metadata={"kind": "payment", "payment_id": pay_row["id"]},
+        success_url=f"{APP_URL}/?checkout=success", cancel_url=f"{APP_URL}/?checkout=cancel")
+    db.table("payments").update({"stripe_session_id": session["id"]}).eq("id", pay_row["id"]).execute()
+    return jsonify(url=session["url"])
+
+
+# ---------- Flow 2: milestone escrow (charge now, transfer on approval) ----------
+@app.post("/api/agreements")
+@authed
+def create_agreement(user, me):
+    d = body()
+    amount, title = d.get("amountCents"), str(d.get("title") or "").strip()
+    if not valid_amount(amount) or not title or len(title) > 120:
+        return fail("Invalid details.")
+    payee, err = find_payee(d.get("payeeHandle"), me)
+    if err:
+        return fail(err)
+    a = first(db.table("agreements").insert({
+        "payer": me["id"], "payee": payee["id"], "payer_handle": me["handle"], "payee_handle": payee["handle"],
+        "title": title, "amount_cents": amount}).execute())
+    session = stripe.checkout.Session.create(
+        mode="payment", customer_email=user.email,
+        line_items=[{"quantity": 1, "price_data": {"currency": "eur", "unit_amount": amount,
+                     "product_data": {"name": f"Milestone: {title}"}}}],
+        payment_intent_data={"transfer_group": "AGR-" + a["id"]},
+        metadata={"kind": "agreement", "agreement_id": a["id"]},
+        success_url=f"{APP_URL}/?checkout=success", cancel_url=f"{APP_URL}/?checkout=cancel")
+    db.table("agreements").update({"stripe_session_id": session["id"]}).eq("id", a["id"]).execute()
+    return jsonify(url=session["url"])
+
+
+def get_agreement(agreement_id):
+    return first(db.table("agreements").select("*").eq("id", agreement_id).limit(1).execute())
+
+
+@app.post("/api/agreements/<agreement_id>/release")
+@authed
+def release(user, me, agreement_id):
+    a = get_agreement(agreement_id)
+    if not a or a["payer"] != me["id"] or a["status"] != "funded":
+        return fail("Agreement not available.")
+    payee = first(db.table("profiles").select("stripe_account_id").eq("id", a["payee"]).limit(1).execute())
+    intent = stripe.PaymentIntent.retrieve(a["payment_intent"])
+    # The idempotency key makes double clicks safe: Stripe returns the same transfer.
+    stripe.Transfer.create(amount=a["amount_cents"], currency="eur", destination=payee["stripe_account_id"],
+                           transfer_group="AGR-" + a["id"], source_transaction=intent["latest_charge"],
+                           idempotency_key="release-" + a["id"])
+    done = first(db.table("agreements").update({"status": "released", "settled_at": now_iso()})
+                 .eq("id", a["id"]).eq("status", "funded").execute())
+    if done:
+        ref = "AGR-" + short(a["id"])
+        db.table("ledger").update({"status": "released"}).eq("ref", ref).execute()
+        log(ref=ref + "-IN", user_id=a["payee"], counterparty=a["payer_handle"], kind="agreement",
+            note=a["title"], amount_cents=a["amount_cents"], status="released")
+    return jsonify(ok=True)
+
+
+@app.post("/api/agreements/<agreement_id>/refund")  # the recipient declines the work
+@authed
+def refund(user, me, agreement_id):
+    a = get_agreement(agreement_id)
+    if not a or a["payee"] != me["id"] or a["status"] != "funded":
+        return fail("Agreement not available.")
+    stripe.Refund.create(payment_intent=a["payment_intent"], idempotency_key="refund-" + a["id"])
+    done = first(db.table("agreements").update({"status": "refunded", "settled_at": now_iso()})
+                 .eq("id", a["id"]).eq("status", "funded").execute())
+    if done:
+        ref = "AGR-" + short(a["id"])
+        db.table("ledger").update({"status": "refunded"}).eq("ref", ref).execute()
+        log(ref=ref + "-REF", user_id=a["payer"], counterparty=a["payee_handle"], kind="agreement",
+            note=a["title"], amount_cents=a["amount_cents"], status="refunded")
+    return jsonify(ok=True)
+
+
+# ---------- Plan subscriptions ----------
+@app.post("/api/payment/create-checkout-session")
+@authed
+def plan_checkout(user, me):
+    price = PRICES.get(body().get("tier"))
+    if not price:
+        return fail("Unknown plan.")
+    session = stripe.checkout.Session.create(
+        mode="subscription", line_items=[{"price": price, "quantity": 1}],
+        customer_email=user.email, client_reference_id=user.id,
+        metadata={"kind": "plan", "tier": body().get("tier")},
+        success_url=f"{APP_URL}/?checkout=success", cancel_url=f"{APP_URL}/?checkout=cancel")
+    return jsonify(url=session["url"])
+
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
