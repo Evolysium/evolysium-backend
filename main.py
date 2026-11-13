@@ -352,7 +352,7 @@ def newsletter_subscribe():
 @app.route("/api/payment/create-checkout-session", methods=["POST"])
 def create_checkout_session():
     data = request.json or {}
-    tier = data.get("tier", "creator")
+    tier = data.get("tier", "essential")
     email = data.get("email")
 
     stripe_key = os.environ.get("STRIPE_SECRET_KEY", "").strip()
@@ -362,16 +362,17 @@ def create_checkout_session():
 
     stripe.api_key = stripe_key
 
+    # Ažurirane cijene u centima prema tvojim novim paketima:
+    # essential: €299 -> 29900 centi
+    # professional: €899 -> 89900 centi
+    # enterprise: €1199 -> 119900 centi
     prices = {
-        "explorer": 0,
-        "creator": 899,
-        "business": 1199,
-        "elite": 2499
+        "essential": 29900,
+        "professional": 89900,
+        "enterprise": 119900
     }
 
-    amount = prices.get(tier, 899)
-    if amount == 0:
-        return jsonify({"success": False, "error": "Free tier."}), 400
+    amount = prices.get(tier, 29900)
 
     frontend_url = os.environ.get("FRONTEND_URL", "https://evolysium.github.io/evolysium-frontend/")
 
@@ -381,7 +382,7 @@ def create_checkout_session():
                 'price_data': {
                     'currency': 'eur',
                     'product_data': {
-                        'name': f'Evolysium - {tier.capitalize()} Pass',
+                        'name': f'Evolysium - {tier.capitalize()} Plan',
                     },
                     'unit_amount': amount,
                     'recurring': {'interval': 'month'},
