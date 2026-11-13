@@ -1,12 +1,3 @@
-"""Evolysium backend (Flask): Stripe Connect payments, milestone escrow, plan subscriptions.
-
-Environment variables (Render):
-  SUPABASE_URL, SUPABASE_KEY (the SERVICE ROLE key, never put it in index.html),
-  STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
-  APP_URL (the public URL of this service, e.g. https://evolysium-backend.onrender.com),
-  optional: PRICE_ESSENTIAL, PRICE_PROFESSIONAL, PRICE_ENTERPRISE (Stripe price IDs)
-Start command: gunicorn main:app
-"""
 import json
 import os
 from datetime import datetime, timezone
