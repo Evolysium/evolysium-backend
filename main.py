@@ -336,6 +336,17 @@ def create_invoice(user, me):
     return jsonify(ref=ref)
 
 
+# ---------- Subscription self-service (Stripe customer portal) ----------
+@app.post("/api/billing/portal")
+@authed
+def billing_portal(user, me):
+    sub = first(db.table("subscriptions").select("stripe_customer").eq("user_id", me["id"]).limit(1).execute())
+    if not sub or not sub.get("stripe_customer"):
+        return fail("You do not have a subscription yet.")
+    session = stripe.billing_portal.Session.create(customer=sub["stripe_customer"], return_url=f"{APP_URL}/")
+    return jsonify(url=session["url"])
+
+
 # ---------- Plan subscriptions ----------
 @app.post("/api/payment/create-checkout-session")
 @authed
