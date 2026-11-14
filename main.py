@@ -125,9 +125,24 @@ def on_error(e):
 
 
 # ---------- pages ----------
+def serve_page():
+    for folder in (os.path.join(BASE, "templates"), BASE):
+        if os.path.exists(os.path.join(folder, "index.html")):
+            return send_from_directory(folder, "index.html")
+    return "index.html was not found next to main.py or in the templates folder.", 500
+
+
 @app.get("/")
 def home():
-    return send_from_directory(os.path.join(BASE, "templates"), "index.html")
+    return serve_page()
+
+
+@app.get("/<path:path>")
+def fallback(path):
+    # Email-confirmation and Stripe return links can land on any path: show the app, not a 404.
+    if path.startswith("api/"):
+        return fail("Not found.", 404)
+    return serve_page()
 
 
 @app.get("/healthz")
