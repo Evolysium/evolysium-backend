@@ -1,6 +1,8 @@
 import json
 import os
-from datetime import datetime, timezone
+import time
+import uuid
+from datetime import date, datetime, timezone
 from functools import wraps
 
 import stripe
@@ -15,7 +17,15 @@ stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 db = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
 
-MIN_CENTS, MAX_CENTS, FEE_RATE = 50, 10_000_000, 0.0015  # 0.15% fee on direct payments
+MIN_CENTS, MAX_CENTS = 500, 10_000_000  # EUR 5.00 to EUR 100,000.00
+# Platform fee, deducted from the recipient's share. PLACEHOLDER values: set them so the fee covers
+# Stripe's processing and Connect costs for your account plus your margin.
+FEE_RATE = float(os.environ.get("FEE_RATE", "0.029"))
+FEE_FIXED_CENTS = int(os.environ.get("FEE_FIXED_CENTS", "30"))
+
+
+def platform_fee(amount):
+    return round(amount * FEE_RATE) + FEE_FIXED_CENTS
 PRICES = {  # Replace with your LIVE price IDs (or set the env vars) when you go live.
     "essential": os.environ.get("PRICE_ESSENTIAL", "price_1UJi0M5Y0NKGSS7msT8FpLlI"),
     "professional": os.environ.get("PRICE_PROFESSIONAL", "price_1UJi1C5Y0NKGSS7mTI1Zaxp7"),
@@ -43,8 +53,8 @@ def log(**row):
     db.table("ledger").insert(row).execute()
 
 
-def fail(msg, code=400):
-    return jsonify(error=msg), code
+def fail(msg, code=400, **extra):
+    return jsonify(error=msg, **extra), code
 
 
 def body():
@@ -53,6 +63,22 @@ def body():
 
 def valid_amount(v):
     return isinstance(v, int) and not isinstance(v, bool) and MIN_CENTS <= v <= MAX_CENTS
+
+
+ENFORCE_PLANS = os.environ.get("ENFORCE_PLANS", "1") == "1"  # set to 0 while testing without subscribing
+ALL_PLANS = ("essential", "professional", "enterprise")
+
+
+def plan_error(me, allowed):
+    """Returns an error response if the user's plan does not include the feature, else None."""
+    if not ENFORCE_PLANS:
+        return None
+    sub = first(db.table("subscriptions").select("tier,status").eq("user_id", me["id"]).limit(1).execute())
+    tier = sub["tier"] if sub and sub["status"] in ("active", "trialing") else None
+    if tier in allowed:
+        return None
+    msg = "Choose a plan to use this feature." if tier is None else "This feature needs the Professional plan or higher."
+    return fail(msg, 402, code="plan_required")
 
 
 def authed(fn):
@@ -188,6 +214,9 @@ def connect_status(user, me):
 @app.post("/api/pay")
 @authed
 def pay(user, me):
+    blocked = plan_error(me, ALL_PLANS)
+    if blocked:
+        return blocked
     d = body()
     amount = d.get("amountCents")
     if not valid_amount(amount):
@@ -195,7 +224,7 @@ def pay(user, me):
     payee, err = find_payee(d.get("payeeHandle"), me)
     if err:
         return fail(err)
-    fee = round(amount * FEE_RATE)
+    fee = platform_fee(amount)
     pay_row = first(db.table("payments").insert({
         "payer": me["id"], "payee": payee["id"], "payer_handle": me["handle"], "payee_handle": payee["handle"],
         "amount_cents": amount, "fee_cents": fee, "note": str(d.get("note") or "")[:200]}).execute())
@@ -217,6 +246,9 @@ def pay(user, me):
 @app.post("/api/agreements")
 @authed
 def create_agreement(user, me):
+    blocked = plan_error(me, ("professional", "enterprise"))
+    if blocked:
+        return blocked
     d = body()
     amount, title = d.get("amountCents"), str(d.get("title") or "").strip()
     if not valid_amount(amount) or not title or len(title) > 120:
@@ -251,7 +283,7 @@ def release(user, me, agreement_id):
     payee = first(db.table("profiles").select("stripe_account_id").eq("id", a["payee"]).limit(1).execute())
     intent = stripe.PaymentIntent.retrieve(a["payment_intent"])
     # The idempotency key makes double clicks safe: Stripe returns the same transfer.
-    stripe.Transfer.create(amount=a["amount_cents"], currency="eur", destination=payee["stripe_account_id"],
+    stripe.Transfer.create(amount=a["amount_cents"] - platform_fee(a["amount_cents"]), currency="eur", destination=payee["stripe_account_id"],
                            transfer_group="AGR-" + a["id"], source_transaction=intent["latest_charge"],
                            idempotency_key="release-" + a["id"])
     done = first(db.table("agreements").update({"status": "released", "settled_at": now_iso()})
@@ -260,7 +292,7 @@ def release(user, me, agreement_id):
         ref = "AGR-" + short(a["id"])
         db.table("ledger").update({"status": "released"}).eq("ref", ref).execute()
         log(ref=ref + "-IN", user_id=a["payee"], counterparty=a["payer_handle"], kind="agreement",
-            note=a["title"], amount_cents=a["amount_cents"], status="released")
+            note=a["title"], amount_cents=a["amount_cents"] - platform_fee(a["amount_cents"]), status="released")
     return jsonify(ok=True)
 
 
@@ -281,6 +313,29 @@ def refund(user, me, agreement_id):
     return jsonify(ok=True)
 
 
+# ---------- Invoices (included in every plan) ----------
+@app.post("/api/invoices")
+@authed
+def create_invoice(user, me):
+    blocked = plan_error(me, ALL_PLANS)
+    if blocked:
+        return blocked
+    d = body()
+    amount = d.get("amountCents")
+    client = str(d.get("client") or "").strip()[:120]
+    desc = str(d.get("description") or "").strip()[:150]
+    try:
+        due = date.fromisoformat(str(d.get("due")))
+    except ValueError:
+        return fail("Invalid due date.")
+    if not (isinstance(amount, int) and not isinstance(amount, bool) and 0 < amount <= MAX_CENTS) or not client or not desc:
+        return fail("Invalid details.")
+    ref = "INV-" + uuid.uuid4().hex[:8].upper()
+    log(ref=ref, user_id=me["id"], counterparty=client, kind="invoice",
+        note=f"{desc} (due {due})", amount_cents=amount, status="sent")
+    return jsonify(ref=ref)
+
+
 # ---------- Plan subscriptions ----------
 @app.post("/api/payment/create-checkout-session")
 @authed
@@ -294,6 +349,23 @@ def plan_checkout(user, me):
         metadata={"kind": "plan", "tier": body().get("tier")},
         success_url=f"{APP_URL}/?checkout=success", cancel_url=f"{APP_URL}/?checkout=cancel")
     return jsonify(url=session["url"])
+
+
+_plans = {"t": 0, "plans": []}
+
+
+@app.get("/api/plans")
+def plans():
+    """Live plan prices from Stripe, so the page always matches what Stripe will charge."""
+    if time.time() - _plans["t"] > 300:
+        out = []
+        for tier, price_id in PRICES.items():
+            try:
+                out.append({"tier": tier, "amount": stripe.Price.retrieve(price_id)["unit_amount"]})
+            except Exception:
+                app.logger.warning("Could not load price for %s", tier)
+        _plans.update(t=time.time(), plans=out)
+    return jsonify(plans=_plans["plans"], fee={"rate": FEE_RATE, "fixed": FEE_FIXED_CENTS})
 
 
 if __name__ == "__main__":
